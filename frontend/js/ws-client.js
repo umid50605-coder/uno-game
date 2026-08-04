@@ -31,13 +31,11 @@ class WSClient {
   }
 
   _openSocket() {
-    const url =
-      `${WS_BASE}/ws/rooms/${this.roomId}?token=${this.token}`;
+    const url = `${WS_BASE}/ws/rooms/${this.roomId}?token=${this.token}`;
 
     console.log(url);
 
     this.socket = new WebSocket(url);
-    this.socket = new WebSocket(`${WS_BASE}/ws/rooms/${this.roomId}?token=${this.token}`);
 
     this.socket.onopen = () => {
       if (this.reconnectAttempt > 0) {
@@ -48,8 +46,12 @@ class WSClient {
     };
 
     this.socket.onmessage = (event) => {
+
+      console.log("RECV:", event.data);
+
       const data = JSON.parse(event.data);
-      (this.handlers[data.type] || []).forEach((fn) => fn(data));
+
+      (this.handlers[data.type] || []).forEach(fn => fn(data));
     };
 
     this.socket.onclose = () => {
@@ -76,9 +78,19 @@ class WSClient {
     }, delay);
   }
 
-    _startHeartbeat() {
+  _startHeartbeat() {
+
+    console.log("Heartbeat started");
+
     this._stopHeartbeat();
-    this.heartbeatTimer = setInterval(() => this.send("ping"), HEARTBEAT_INTERVAL_MS);
+
+    this.heartbeatTimer = setInterval(() => {
+
+        console.log("PING");
+
+        this.send("ping");
+
+    }, 8000);
   }
 
   _stopHeartbeat() {
@@ -93,7 +105,25 @@ class WSClient {
   }
 
   send(action, payload = {}) {
-    this.socket?.send(JSON.stringify({ action, ...payload }));
+
+    console.log("SEND:", action, payload);
+
+    if (!this.socket) {
+        console.log("Socket yo'q");
+        return;
+    }
+
+    console.log("readyState =", this.socket.readyState);
+
+    if (this.socket.readyState !== WebSocket.OPEN) {
+        console.log("Socket OPEN emas");
+        return;
+    }
+
+    this.socket.send(JSON.stringify({
+        action,
+        ...payload
+    }));
   }
 
   close() {
