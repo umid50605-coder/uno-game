@@ -4,6 +4,8 @@ import { wsClient } from "../ws-client.js";
 import { getState, setState } from "../state.js";
 import { showScreen } from "../main.js";
 
+console.log(getState());
+
 const RING_HEX = { red: "#e24b4a", yellow: "#f1c40f", green: "#2ecc71", blue: "#3498db" };
 const WILD_RING = "#f2f2f2";
 
@@ -18,6 +20,10 @@ let disconnectCountdownTimer = null;
 
 export function initGame() {
   const { roomId, token } = getState();
+
+  console.log("roomId =", roomId);
+  console.log("token =", token);
+
   wsClient.connect(roomId, token);
 
   wsClient.on("game_state", renderState);

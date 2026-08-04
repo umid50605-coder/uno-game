@@ -190,7 +190,6 @@ async function refreshRooms() {
 }
 
 async function enterRoom(roomId) {
-  await api.joinRoom(roomId).catch(() => {});
-  setState({ roomId });
-  showScreen("room");
+    setState({ roomId });
+    showScreen("room");
 }

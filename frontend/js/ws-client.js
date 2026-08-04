@@ -31,6 +31,12 @@ class WSClient {
   }
 
   _openSocket() {
+    const url =
+      `${WS_BASE}/ws/rooms/${this.roomId}?token=${this.token}`;
+
+    console.log(url);
+
+    this.socket = new WebSocket(url);
     this.socket = new WebSocket(`${WS_BASE}/ws/rooms/${this.roomId}?token=${this.token}`);
 
     this.socket.onopen = () => {

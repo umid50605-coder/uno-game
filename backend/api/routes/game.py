@@ -50,8 +50,12 @@ active_games: dict[int, GameEngine] = {}
 
 @router.websocket("/ws/rooms/{room_id}")
 async def game_websocket(websocket: WebSocket, room_id: int, token: str = Query(...)):
+    logger.info("========== NEW WEBSOCKET ==========")
+    logger.info(f"room_id={room_id}")
+    logger.info(f"token={token}")
     payload = decode_session_token(token)
     if payload is None:
+        logger.info("WS: token yaroqsiz")
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
         return
 
