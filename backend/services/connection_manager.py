@@ -41,25 +41,30 @@ class ConnectionManager:
                 pass
 
     async def broadcast_state(self, room_id: int, game_engine, exclude: int | None = None):
-        for player_id, ws in list(self.rooms.get(room_id, {}).items()):
+        room = self.rooms.get(room_id, {})
+        dead: list[int] = []
+        for player_id, ws in list(room.items()):
             if player_id == exclude:
                 continue
+            state = game_engine.get_state(player_id)
+            try:
+                await ws.send_json(state)
+            except Exception as e:
+                print(f"[WS] SEND ERROR {player_id}: {e}")
+                dead.append(player_id)
+        for player_id in dead:
+            room.pop(player_id, None)
 
-        state = game_engine.get_state(player_id)
-
-        print(f"[WS] SEND STATE TO {player_id}")
-
-        try:
-            await ws.send_json(state)
-            print(f"[WS] STATE SENT TO {player_id}")
-        except Exception as e:
-            print(f"[WS] SEND ERROR {player_id}: {e}")
     async def broadcast_raw(self, room_id: int, message: dict):
-        for ws in list(self.rooms.get(room_id, {}).values()):
+        room = self.rooms.get(room_id, {})
+        dead: list[int] = []
+        for player_id, ws in list(room.items()):
             try:
                 await ws.send_json(message)
             except Exception:
-                pass
+                dead.append(player_id)
+        for player_id in dead:
+            room.pop(player_id, None)
 
     def is_connected(self, room_id: int, player_id: int) -> bool:
         return player_id in self.rooms.get(room_id, {})
