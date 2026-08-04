@@ -1,0 +1,210 @@
+/* base.css — umumiy va lobby ekrani stillari (avvalgi style.css shu yerga ko'chadi) */
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: radial-gradient(ellipse at 50% 120%, #0d2b26 0%, #0a1815 45%, #0a0a0c 85%);
+  background-attachment: fixed;
+  color: #fff;
+  font-family: system-ui, sans-serif;
+}
+
+.hidden {
+  display: none !important;
+}
+
+#lobby-screen {
+  padding: 16px;
+  max-width: 480px;
+  margin: 0 auto;
+}
+
+#room-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 16px 0;
+}
+
+.room-item {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 10px 14px;
+  cursor: pointer;
+}
+
+.room-item:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+button {
+  font: inherit;
+  border: none;
+  border-radius: 8px;
+  padding: 10px 16px;
+  cursor: pointer;
+  background: #2ecc71;
+  color: #10241f;
+  font-weight: 700;
+}
+
+#lobby-status {
+  margin-top: 12px;
+  font-size: 14px;
+  opacity: 0.85;
+}
+
+.back-btn {
+  background: transparent;
+  color: #fff;
+  padding: 6px 4px;
+  margin-bottom: 12px;
+}
+
+#room-screen {
+  padding: 16px;
+  max-width: 480px;
+  margin: 0 auto;
+}
+
+.room-players {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 16px 0;
+}
+
+.room-player-row {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 10px 14px;
+}
+
+.room-player-row.me {
+  border: 1px solid #2ecc71;
+}
+
+.room-status {
+  margin-bottom: 16px;
+  font-size: 14px;
+  opacity: 0.85;
+}
+
+#room-ready-btn,
+#room-wait-btn {
+  margin-right: 8px;
+}
+
+#room-ready-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* --- Reyting (leaderboard) --- */
+
+.leaderboard {
+  margin: 16px 0 24px;
+}
+
+.leaderboard-title {
+  margin: 0 0 8px;
+  font-size: 15px;
+  font-weight: 700;
+  opacity: 0.9;
+}
+
+.leaderboard-table {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.leaderboard-row {
+  display: grid;
+  grid-template-columns: 36px 1fr auto;
+  align-items: center;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 14px;
+}
+
+.leaderboard-stats {
+  font-size: 0.8em;
+  opacity: 0.7;
+  flex: 1;
+  margin: 0 8px;
+  color: #aaa;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.leaderboard-row.me {
+  background: rgba(46, 204, 113, 0.16);
+  border-color: #2ecc71;
+}
+
+.leaderboard-rank {
+  font-weight: 700;
+  opacity: 0.75;
+}
+
+.leaderboard-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.leaderboard-points {
+  font-weight: 700;
+  color: #2ecc71;
+  text-align: right;
+}
+
+.leaderboard-divider {
+  text-align: center;
+  letter-spacing: 3px;
+  opacity: 0.4;
+  font-size: 12px;
+  padding: 2px 0;
+}
+
+/* --- Xona tanlash va kod ekranlari --- */
+
+#room-choice-screen,
+#create-code-screen {
+  padding: 16px;
+  max-width: 480px;
+  margin: 0 auto;
+  text-align: center;
+}
+
+#room-choice-screen button,
+#create-code-screen button {
+  margin: 6px;
+  width: 80%;
+  font-size: 16px;
+}
+
+#code-input {
+  font-size: 18px;
+  text-align: center;
+  letter-spacing: 2px;
+}
+
+/* Lobby qidiruv input */
+#search-input {
+  font-size: 14px;
+}
+
+#random-btn {
+  background: #f1c40f;
+  color: #10241f;
+  margin: 4px 0 12px;
+}

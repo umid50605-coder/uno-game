@@ -1,0 +1,243 @@
+/* Stage 12+13 — style.css oxiriga qo'shing */
+
+#game-screen {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: transparent; /* umumiy body gradienti ko'rinadi */
+  color: #fff;
+  font-family: system-ui, sans-serif;
+}
+
+.opponents {
+  display: flex;
+  gap: 8px;
+  padding: 10px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.opponent {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.opponent.catchable {
+  border: 1px solid #e74c3c;
+  box-shadow: 0 0 6px rgba(231, 76, 60, 0.5);
+}
+
+.opponent.disconnected {
+  opacity: 0.5;
+}
+
+.disconnected-badge {
+  background: #7f8c8d;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 999px;
+}
+
+.connection-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  background: #e67e22;
+  color: #fff;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 6px;
+  z-index: 20;
+}
+
+/* Yangi opponent-disconnect-banner uslubi */
+#opponent-disconnect-banner {
+  background: #e67e22;
+  color: #fff;
+  padding: 12px 16px;
+  margin: 0 0 12px 0;
+  border-radius: 8px;
+  font-weight: 600;
+  text-align: center;
+  transition: opacity 0.2s;
+  position: relative;
+  z-index: 5;
+}
+
+#opponent-disconnect-banner.hidden {
+  display: none;
+}
+
+.uno-badge {
+  background: #e74c3c;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 999px;
+  letter-spacing: 0.5px;
+}
+
+.catch-btn {
+  background: #e74c3c;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 3px 7px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.table {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+}
+
+.card-svg {
+  width: 60px;
+  height: 90px;
+  display: block;
+}
+
+.card-main {
+  font-size: 40px;
+  font-weight: 700;
+  fill: #fff;
+  font-family: Arial, sans-serif;
+}
+
+.card-corner {
+  font-size: 11px;
+  fill: #fff;
+  font-family: Arial, sans-serif;
+}
+
+.draw-pile {
+  width: 60px;
+  height: 90px;
+  border-radius: 10px;
+  background: #222;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.stack-indicator {
+  text-align: center;
+  font-size: 13px;
+  font-weight: 700;
+  color: #ff9f43;
+  padding: 2px 8px 0;
+}
+
+.turn-indicator {
+  text-align: center;
+  padding: 8px;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.uno-btn {
+  display: block;
+  margin: 0 auto 8px;
+  background: #e74c3c;
+  color: #fff;
+  border: none;
+  border-radius: 999px;
+  padding: 10px 28px;
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  cursor: pointer;
+}
+
+.uno-btn.armed {
+  animation: uno-pulse 0.9s ease-in-out infinite;
+}
+
+@keyframes uno-pulse {
+  0%, 100% { transform: scale(1); box-shadow: 0 0 0 rgba(231, 76, 60, 0.6); }
+  50% { transform: scale(1.08); box-shadow: 0 0 14px rgba(231, 76, 60, 0.8); }
+}
+
+.hand {
+  display: flex;
+  gap: -10px;
+  overflow-x: auto;
+  padding: 12px;
+}
+
+.card {
+  cursor: pointer;
+  transition: transform 0.15s ease;
+  margin-right: -18px;
+}
+
+.card:hover {
+  transform: translateY(-10px);
+}
+
+.color-picker {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+}
+
+.color-picker button {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  border: 3px solid #fff;
+}
+
+.game-over,
+.game-error,
+.game-toast {
+  position: fixed;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #fff;
+  color: #111;
+  padding: 10px 18px;
+  border-radius: 8px;
+  font-weight: 600;
+  z-index: 10;
+}
+
+.game-error {
+  background: #e74c3c;
+  color: #fff;
+}
+
+.game-toast {
+  top: auto;
+  bottom: 90px;
+  background: #222;
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.hidden {
+  display: none !important;
+}
