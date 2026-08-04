@@ -8,6 +8,7 @@ from aiogram import Bot, Dispatcher
 from aiogram.types import Update
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 
+from bot.handlers.start import router as start_router
 from api.routes import auth, rooms, users, game
 from core.config import get_settings
 from core.database import Base, engine, SessionLocal
@@ -30,6 +31,7 @@ app = FastAPI(title="UNO Game Backend")
 # ------------------- Telegram bot -------------------
 bot = Bot(token=settings.BOT_TOKEN)
 dp = Dispatcher()
+dp.include_router(start_router)
 
 # Bu yerda sizning bot handlerlaringizni import qilib, dp ga ro'yxatdan o'tkazing
 # Masalan:
