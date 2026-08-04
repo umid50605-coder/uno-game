@@ -118,8 +118,13 @@ async def game_websocket(websocket: WebSocket, room_id: int, token: str = Query(
             while True:
                 try:
                     data = await asyncio.wait_for(
-                        websocket.receive_json(), timeout=HEARTBEAT_TIMEOUT_SECONDS
+                        websocket.receive_json(),
+                        timeout=HEARTBEAT_TIMEOUT_SECONDS
                     )
+
+                    print("RECV FROM CLIENT:", telegram_id, data)
+                    if not isinstance(data, dict):
+                        continue
                 except asyncio.TimeoutError:
                     logger.info(
                         "Player %s: %ss xabar kelmadi, uzilgan deb hisoblanmoqda",

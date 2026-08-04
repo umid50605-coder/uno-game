@@ -38,10 +38,15 @@ class WSClient {
     this.socket = new WebSocket(url);
 
     this.socket.onopen = () => {
+
+      console.log("SOCKET OPEN");
+
       if (this.reconnectAttempt > 0) {
-        (this.handlers["_reconnected"] || []).forEach((fn) => fn());
+          (this.handlers["_reconnected"] || []).forEach(fn => fn());
       }
+
       this.reconnectAttempt = 0;
+
       this._startHeartbeat();
     };
 
@@ -54,11 +59,21 @@ class WSClient {
       (this.handlers[data.type] || []).forEach(fn => fn(data));
     };
 
-    this.socket.onclose = () => {
+    this.socket.onclose = (event) => {
+
+      console.log(
+          "CLOSE",
+          "code =", event.code,
+          "reason =", event.reason,
+          "wasClean =", event.wasClean
+      );
+
       this._stopHeartbeat();
-      (this.handlers["_close"] || []).forEach((fn) => fn());
+
+      (this.handlers["_close"] || []).forEach(fn => fn());
+
       if (!this.intentionalClose) {
-        (this.handlers["_disconnected"] || []).forEach((fn) => fn());
+        (this.handlers["_disconnected"] || []).forEach(fn => fn());
         this._scheduleReconnect();
       }
     };
