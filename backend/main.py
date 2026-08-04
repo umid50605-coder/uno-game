@@ -40,11 +40,15 @@ dp.include_router(start_router)
 
 # ------------------- Webhook endpoint -------------------
 @app.post("/webhook")
-async def webhook(request: Request) -> dict:
-    """Telegram webhook manzili."""
+async def webhook(request: Request):
     data = await request.json()
-    update = Update(**data)
+
+    print(data)   # yoki logger.info(data)
+
+    update = Update.model_validate(data)
+
     await dp.feed_update(bot, update)
+
     return {"ok": True}
 
 # ------------------- Statik fayllar -------------------
