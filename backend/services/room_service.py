@@ -59,6 +59,47 @@ def _get_room_or_404(db: Session, room_id: int) -> Room:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Xona topilmadi")
     return room
 
+def _leave_current_waiting_room(db: Session, user: User):
+    player = (
+        db.query(RoomPlayer)
+        .join(Room)
+        .filter(
+            RoomPlayer.user_id == user.id,
+            Room.status == RoomStatus.WAITING,
+        )
+        .first()
+    )
+
+    if player is None:
+        return
+
+    room = db.query(Room).filter(Room.id == player.room_id).first()
+
+    db.delete(player)
+    db.flush()
+
+    if room is None:
+        return
+
+    remaining = (
+        db.query(RoomPlayer)
+        .filter(RoomPlayer.room_id == room.id)
+        .all()
+    )
+
+    if not remaining:
+        db.delete(room)
+        db.flush()
+        return
+
+    if room.host_id == user.id:
+        room.host_id = min(
+            remaining,
+            key=lambda p: p.joined_at
+        ).user_id
+
+    db.flush()
+
 def _lock_message(lock: dict) -> str:
     if lock.get("blacklisted"):
         return "Ko'p marta ataylab uzilganingiz aniqlandi — hozircha o'yin o'ynay olmaysiz."
@@ -77,6 +118,8 @@ def create_room(db: Session, host_telegram_id: int, is_public: bool = True, join
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=_lock_message(lock))
 
     host = _get_user_or_404(db, host_telegram_id)
+    
+    _leave_current_waiting_room(db, host)
 
     # Security xona uchun kod majburiy
     if not is_public and not join_code:
@@ -167,6 +210,7 @@ def join_room(db: Session, room_id: int, telegram_id: int, join_code: str | None
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Noto'g'ri kod")
 
     user = _get_user_or_404(db, telegram_id)
+    _leave_current_waiting_room(db, user)
 
     already_in = any(p.user_id == user.id for p in room.players)
 
