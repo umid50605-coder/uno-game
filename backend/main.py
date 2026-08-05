@@ -1,6 +1,8 @@
 import asyncio
 import logging
+import websockets, uvicorn
 
+from importlib.metadata import version as _v
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -16,6 +18,13 @@ from models import disconnect_log as disconnect_log_model  # noqa: F401
 from models import room as room_model  # noqa: F401
 from models import user as user_model  # noqa: F401
 from services.room_service import cleanup_stale_rooms
+
+print(f"[DEBUG] websockets={_v('websockets')} uvicorn={_v('uvicorn')}")
+try:
+    from uvicorn.protocols.websockets.auto import AutoWebSocketsProtocol
+    print("[DEBUG] WS auto-detect: OK")
+except Exception as e:
+    print(f"[DEBUG] WS auto-detect FAILED: {e!r}")
 
 logging.basicConfig(
     level=logging.INFO,
