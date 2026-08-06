@@ -10,33 +10,73 @@ load_dotenv()
 class Settings:
     BOT_TOKEN: str
     WEBAPP_URL: str
-    WEBHOOK_URL: str          # yangi
+    WEBHOOK_URL: str
+    WEBHOOK_SECRET: str
+
     JWT_SECRET: str
-    JWT_ALGORITHM: str = "HS256"
-    JWT_EXPIRE_MINUTES: int = 60 * 24
+    JWT_ALGORITHM: str
+    JWT_EXPIRE_MINUTES: int
+
+    JWT_ISSUER: str
+    JWT_AUDIENCE: str
 
     def __init__(self) -> None:
-        bot_token = os.getenv("BOT_TOKEN")
-        webapp_url = os.getenv("WEBAPP_URL")
-        jwt_secret = os.getenv("JWT_SECRET")
 
-        if not bot_token:
-            raise RuntimeError("BOT_TOKEN muhit o'zgaruvchilarida topilmadi.")
-        if not webapp_url:
-            raise RuntimeError("WEBAPP_URL muhit o'zgaruvchilarida topilmadi.")
-        if not jwt_secret:
-            raise RuntimeError("JWT_SECRET muhit o'zgaruvchilarida topilmadi.")
+        self.BOT_TOKEN = self._require_env("BOT_TOKEN")
+        self.WEBAPP_URL = self._require_env("WEBAPP_URL")
+        self.JWT_SECRET = self._require_env("JWT_SECRET")
+        self.WEBHOOK_SECRET = self._require_env("WEBHOOK_SECRET")
 
-        self.BOT_TOKEN = bot_token
-        self.WEBAPP_URL = webapp_url
-        self.JWT_SECRET = jwt_secret
+        self.JWT_ALGORITHM = os.getenv(
+            "JWT_ALGORITHM",
+            "HS256",
+        )
 
-        # WEBHOOK_URL ni WEBAPP_URL + '/webhook' qilib olamiz
-        self.WEBHOOK_URL = f"{webapp_url.rstrip('/')}/webhook"
+        try:
+            self.JWT_EXPIRE_MINUTES = int(
+                os.getenv("JWT_EXPIRE_MINUTES", "1440")
+            )
+        except ValueError:
+            raise RuntimeError(
+                "JWT_EXPIRE_MINUTES son bo'lishi kerak."
+            )
+
+        self.JWT_ISSUER = os.getenv(
+            "JWT_ISSUER",
+            "uno-game",
+        )
+
+        self.JWT_AUDIENCE = os.getenv(
+            "JWT_AUDIENCE",
+            "uno-webapp",
+        )
+
+        webhook_url = os.getenv("WEBHOOK_URL")
+
+        if webhook_url:
+            self.WEBHOOK_URL = webhook_url.rstrip("/")
+        else:
+            self.WEBHOOK_URL = (
+                f"{self.WEBAPP_URL.rstrip('/')}/webhook"
+            )
+
+    @staticmethod
+    def _require_env(name: str) -> str:
+        value = os.getenv(name)
+
+        if not value:
+            raise RuntimeError(
+                f"{name} muhit o'zgaruvchilarida topilmadi."
+            )
+
+        return value
 
     @property
     def frontend_dir(self) -> Path:
-        return Path(__file__).resolve().parent.parent.parent / "frontend"
+        return (
+            Path(__file__).resolve().parent.parent.parent
+            / "frontend"
+        )
 
 
 @lru_cache
