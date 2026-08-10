@@ -109,9 +109,11 @@ async def _room_cleanup_loop():
 
 @app.on_event("startup")
 async def startup():
-
-    asyncio.create_task(_room_cleanup_loop())
-    asyncio.create_task(game.disconnect_watcher())
+    # Background vazifalarni ishga tushirish
+    app.state.cleanup_task = asyncio.create_task(_room_cleanup_loop())
+    app.state.disconnect_task = asyncio.create_task(
+        game.disconnect_watcher()
+    )
 
     try:
         await bot.set_webhook(
@@ -119,14 +121,23 @@ async def startup():
             secret_token=settings.WEBHOOK_SECRET,
         )
 
+        webhook_info = await bot.get_webhook_info()
+
         logger.info(
             "Webhook muvaffaqiyatli o'rnatildi: %s",
             settings.WEBHOOK_URL,
         )
 
-    except Exception:
-        logger.exception("Webhook o'rnatishda xato yuz berdi")
+        logger.info(
+            "Webhook holati | pending_updates=%d | last_error=%s",
+            webhook_info.pending_update_count,
+            webhook_info.last_error_message or "yo'q",
+        )
 
+    except Exception:
+        logger.exception(
+            "Webhook o'rnatishda yoki tekshirishda xato yuz berdi"
+        )
 
 # ==========================================================
 # Webhook
@@ -177,7 +188,7 @@ async def home():
     return FileResponse(INDEX_FILE)
 
 
-@app.get("/health")
+@app.get("/healthz")
 async def health():
     return {
         "status": "ok"

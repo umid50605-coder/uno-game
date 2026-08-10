@@ -133,7 +133,7 @@ def create_room(db: Session, host_telegram_id: int, is_public: bool = True, join
         code=code,
         host_id=host.id,
         is_public=is_public,
-        join_code=join_code if not is_public else None,
+        join_code=join_code if not is_public and join_code else None,
     )
     db.add(room)
     db.flush()
@@ -207,7 +207,10 @@ def join_room(db: Session, room_id: int, telegram_id: int, join_code: str | None
     # Security xonada kodni tekshirish
     if not room.is_public:
         if not join_code or join_code != room.join_code:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Noto'g'ri kod")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Noto'g'ri kod",
+            )
 
     user = _get_user_or_404(db, telegram_id)
     _leave_current_waiting_room(db, user)

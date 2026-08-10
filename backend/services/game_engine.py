@@ -71,6 +71,7 @@ class GameEngine:
     disconnected_at: dict[int, datetime] = field(default_factory=dict)
 
     def __post_init__(self):
+        self.finished = False
         self.draw_pile = self._build_deck()
         random.shuffle(self.draw_pile)
         for pid in self.player_ids:
@@ -145,8 +146,10 @@ class GameEngine:
         chosen_color: Optional[str] = None,
         call_uno: bool = False,
     ) -> dict:
-        if self.winner is not None:
+        if self.winner is not None or self.finished:
             return {"ok": False, "error": "O'yin allaqachon tugagan"}
+        if player_id not in self.player_ids:
+            return {"ok": False, "error": "O'yinchi O'yinda emas"}
         if player_id != self._current_player():
             return {"ok": False, "error": "Sizning navbatingiz emas"}
 
@@ -209,8 +212,10 @@ class GameEngine:
         return {"ok": True}
 
     def draw_card(self, player_id: int) -> dict:
-        if self.winner is not None:
+        if self.winner is not None or self.finished:
             return {"ok": False, "error": "O'yin allaqachon tugagan"}
+        if player_id not in self.player_ids:
+            return {"ok": False, "error": "O'yinchi O'yinda emas"}
         if player_id != self._current_player():
             return {"ok": False, "error": "Sizning navbatingiz emas"}
 
@@ -235,7 +240,7 @@ class GameEngine:
         return {"ok": True}
 
     def catch_uno(self, catcher_id: int, target_id: int) -> dict:
-        if self.winner is not None:
+        if self.winner is not None or self.finished:
             return {"ok": False, "error": "O'yin allaqachon tugagan"}
         if catcher_id == target_id:
             return {"ok": False, "error": "O'zingizni tuta olmaysiz"}

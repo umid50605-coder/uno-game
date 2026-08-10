@@ -82,6 +82,11 @@ def validate_init_data(init_data: str) -> dict | None:
 
         now = datetime.now(timezone.utc)
 
+        # Kelajakdan yuborilgan auth_date ni rad etish
+        if auth_date > now + timedelta(minutes=5):
+            logger.warning("initData auth_date kelajakdan yuborilgan")
+            return None
+
         if now - auth_date > timedelta(
             seconds=MAX_INIT_DATA_AGE_SECONDS
         ):
@@ -96,19 +101,22 @@ def validate_init_data(init_data: str) -> dict | None:
 
 
 def create_session_token(telegram_id: int) -> str:
-    """
-    JWT access token yaratadi.
-    """
-
     now = datetime.now(timezone.utc)
+
+    timestamp = int(now.timestamp())
+    expire_at = int(
+        (
+            now + timedelta(
+                minutes=settings.JWT_EXPIRE_MINUTES
+            )
+        ).timestamp()
+    )
 
     payload = {
         "sub": str(telegram_id),
-        "iat": now,
-        "nbf": now,
-        "exp": now + timedelta(
-            minutes=settings.JWT_EXPIRE_MINUTES
-        ),
+        "iat": timestamp,
+        "nbf": timestamp,
+        "exp": expire_at,
         "iss": settings.JWT_ISSUER,
         "aud": settings.JWT_AUDIENCE,
         "type": "access",
@@ -135,6 +143,17 @@ def decode_session_token(token: str) -> dict | None:
             algorithms=[settings.JWT_ALGORITHM],
             issuer=settings.JWT_ISSUER,
             audience=settings.JWT_AUDIENCE,
+            options={
+                "require": [
+                    "exp",
+                    "iat",
+                    "nbf",
+                    "iss",
+                    "aud",
+                    "sub",
+                    "type",  # type maydoni majburiy qilindi
+                ]
+            },
         )
 
         if payload.get("type") != "access":

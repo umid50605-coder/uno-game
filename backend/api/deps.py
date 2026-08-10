@@ -20,7 +20,7 @@ async def get_current_user_id(
     telegram_id qiymatini qaytaradi.
     """
 
-    if authorization is None:
+    if not authorization:
         logger.warning("Authorization header mavjud emas")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

@@ -18,7 +18,8 @@ nazar, doim aynan shu bitta faylga ishora qiladi.
 from pathlib import Path
 
 from sqlalchemy import create_engine, event
-from sqlalchemy.orm import DeclarativeBase, sessionmaker
+from collections.abc import Generator
+from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 DB_PATH = Path(__file__).resolve().parent.parent / "uno.db"
 DATABASE_URL = f"sqlite:///{DB_PATH}"
@@ -48,7 +49,7 @@ class Base(DeclarativeBase):
     pass
 
 
-def get_db():
+def get_db() -> Generator[Session, None, None]:
     """Har bir so'rov uchun alohida DB session beradi va oxirida yopadi."""
     db = SessionLocal()
     try:

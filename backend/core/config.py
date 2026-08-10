@@ -23,9 +23,16 @@ class Settings:
     def __init__(self) -> None:
 
         self.BOT_TOKEN = self._require_env("BOT_TOKEN")
-        self.WEBAPP_URL = self._require_env("WEBAPP_URL")
+        self.WEBAPP_URL = self._require_env("WEBAPP_URL").rstrip("/")
         self.JWT_SECRET = self._require_env("JWT_SECRET")
         self.WEBHOOK_SECRET = self._require_env("WEBHOOK_SECRET")
+
+        allowed_algorithms = {"HS256", "HS384", "HS512"}
+
+        if self.JWT_ALGORITHM not in allowed_algorithms:
+            raise RuntimeError(
+                "JWT_ALGORITHM noto'g'ri."
+            )
 
         self.JWT_ALGORITHM = os.getenv(
             "JWT_ALGORITHM",
@@ -39,6 +46,11 @@ class Settings:
         except ValueError:
             raise RuntimeError(
                 "JWT_EXPIRE_MINUTES son bo'lishi kerak."
+            )
+
+        if self.JWT_EXPIRE_MINUTES <= 0:
+            raise RuntimeError(
+                "JWT_EXPIRE_MINUTES musbat son bo'lishi kerak."
             )
 
         self.JWT_ISSUER = os.getenv(
@@ -60,14 +72,27 @@ class Settings:
                 f"{self.WEBAPP_URL.rstrip('/')}/webhook"
             )
 
+        if len(self.WEBHOOK_SECRET) < 32:
+            raise RuntimeError(
+                "WEBHOOK_SECRET kamida 32 belgidan iborat bo'lishi kerak."
+            )
+
+        if len(self.JWT_SECRET) < 32:
+            raise RuntimeError(
+                "JWT_SECRET kamida 32 belgidan iborat bo'lishi kerak."
+            )
+
     @staticmethod
     def _require_env(name: str) -> str:
         value = os.getenv(name)
 
+        if value is None:
+            raise RuntimeError(f"{name} muhit o'zgaruvchilarida topilmadi.")
+
+        value = value.strip()
+
         if not value:
-            raise RuntimeError(
-                f"{name} muhit o'zgaruvchilarida topilmadi."
-            )
+            raise RuntimeError(f"{name} bo'sh bo'lishi mumkin emas.")
 
         return value
 
