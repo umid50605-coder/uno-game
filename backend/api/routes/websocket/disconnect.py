@@ -1,6 +1,8 @@
 """
 Disconnect helper.
 
+backend/api/routes/websocket/disconnect.py fayli
+
 Vazifalari:
 
 - WebSocket ulanishini uzish

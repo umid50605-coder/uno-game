@@ -1,6 +1,8 @@
 """
 WebSocket client action dispatcher.
 
+backend/api/routes/websocket/action.py fayli 
+
 Vazifalari:
 
 - Client'dan kelgan action'larni tekshirish (validation)

@@ -1,6 +1,8 @@
 """
 WebSocket handler.
 
+backend/api/routes/websocket/handler.py fayli
+
 Vazifalari:
 - Ulanish lifecycle'ini boshqarish (orchestration)
 - Reconnect / boshlang'ich holatni yuborish uchun initial_state.py'ni chaqirish
