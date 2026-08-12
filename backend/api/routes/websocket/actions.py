@@ -92,7 +92,21 @@ def _handle_play_card(
             "error": "chosen_color None yoki str bo'lishi kerak",
         }
 
-    call_uno = bool(data.get("call_uno", False))
+    call_uno = data.get("call_uno", False)
+
+    if not isinstance(call_uno, bool):
+        return {
+            "ok": False,
+            "error": "call_uno bool bo'lishi kerak",
+        }
+
+    VALID_COLORS = {"red", "green", "blue", "yellow"}
+    
+    if chosen_color is not None and chosen_color not in VALID_COLORS:
+        return {
+            "ok": False,
+            "error": f"chosen_color {VALID_COLORS} dan biri bo'lishi kerak",
+        }
 
     return game.play_card(
         player_id=telegram_id,

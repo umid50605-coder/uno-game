@@ -1,17 +1,20 @@
 """
 WebSocket handler.
 
-backend/api/routes/websocket/handler.py fayli
+backend/api/routes/websocket/handler.py
 
 Vazifalari:
-- Ulanish lifecycle'ini boshqarish (orchestration)
-- Reconnect / boshlang'ich holatni yuborish uchun initial_state.py'ni chaqirish
-- Heartbeat va message loop
-- Action dispatch uchun actions.py'ni chaqirish
-- Uzilish uchun disconnect.py'ni chaqirish
 
-Bu fayl boshqa modullarning ICHKI logikasini qayta yozmaydi — faqat
-"qaysi funksiyani qachon chaqirish kerak"ni hal qiladi.
+- WebSocket authentication
+- GameEngine olish/yaratish
+- ConnectionManager'ga ulash
+- Initial state yuborish
+- Message loop'ni boshqarish
+- Disconnect cleanup
+- Game finish'ni chaqirish
+
+Bu fayl boshqa modullarning ichki logikasini bajarmaydi.
+U faqat WebSocket lifecycle'ini orchestration qiladi.
 """
 
 import asyncio
@@ -25,25 +28,27 @@ from fastapi import (
 from sqlalchemy.orm import Session
 
 from services.game_engine import GameEngine
+from services.ws_auth import authenticate_websocket
 
 from .actions import handle_action
 from .disconnect import disconnect_player
 from .finish import finish_game
-from .game_factory import get_or_create_game
 from .initial_state import send_initial_state
 from .state import (
     HEARTBEAT_TIMEOUT_SECONDS,
+    game_manager,
     manager,
-)
-from .validation import (
-    get_room_data,
-    validate_user,
 )
 
 logger = logging.getLogger(__name__)
 
 
-async def _safe_close(websocket: WebSocket, code: int) -> None:
+async def _safe_close(
+    websocket: WebSocket,
+    code: int,
+) -> None:
+    """WebSocket'ni xavfsiz yopadi."""
+
     try:
         await websocket.close(code=code)
     except Exception:
@@ -54,94 +59,99 @@ async def websocket_handler(
     websocket: WebSocket,
     token: str,
     room_id: int,
-    db: Session,
 ) -> None:
     """
-    Bitta WebSocket ulanishining butun umrini boshqaradi.
+    Bitta WebSocket ulanishining to'liq lifecycle'ini boshqaradi.
+
+    DB session authenticate_websocket() tomonidan yaratiladi
+    va auth.db_gen orqali lifecycle oxirida yopiladi.
     """
 
-    telegram_id = await validate_user(token)
+    auth = await authenticate_websocket(
+        websocket=websocket,
+        room_id=room_id,
+        token=token,
+    )
 
-    if telegram_id is None:
-        await _safe_close(websocket, status.WS_1008_POLICY_VIOLATION)
+    if auth is None:
         return
 
-    try:
-        room, player_ids = get_room_data(db, room_id, telegram_id)
-    except Exception:
-        logger.exception(
-            "Xona ma'lumotini olishda xato room=%s telegram_id=%s",
-            room_id,
-            telegram_id,
-        )
-        await _safe_close(websocket, status.WS_1011_INTERNAL_ERROR)
-        return
-
-    if room is None or player_ids is None:
-        await _safe_close(
-            websocket,
-            status.WS_1008_POLICY_VIOLATION,
-        )
-        return
+    telegram_id = auth.telegram_id
+    player_ids = auth.room_player_ids
+    player_names = auth.player_names
+    db = auth.db
 
     try:
-        game = await get_or_create_game(
-            db=db,
-            room_id=room_id,
-            player_ids=player_ids,
-        )
-    except Exception:
-        logger.exception(
-            "GameEngine yaratishda xato room=%s",
-            room_id,
-        )
-        await _safe_close(websocket, status.WS_1011_INTERNAL_ERROR)
-        return
-
-    try:
-        await manager.connect(room_id, telegram_id, websocket)
-    except WebSocketDisconnect:
-        logger.info(
-            "Player %s ulanish jarayonida uzildi room=%s",
-            telegram_id,
-            room_id,
-        )
-        return
-    except Exception:
-        logger.exception(
-            "WebSocket ulanishda xato player=%s room=%s",
-            telegram_id,
-            room_id,
-        )
-        # GameEngine allaqachon yaratilgan bo'lishi mumkin — bu o'yinchini
-        # "uzilgan" deb belgilaymiz, shunda disconnect_watcher.py uni
-        # o'z vaqtida to'g'ri tozalaydi.
+        # ---------------------------------------------------------
+        # 1. GameEngine olish yoki yaratish
+        # ---------------------------------------------------------
         try:
-            game.mark_disconnected(telegram_id)
+            game = game_manager.get_or_create(
+                room_id=room_id,
+                player_ids=player_ids,
+                player_names=player_names,
+            )
+
         except Exception:
-            pass
-        return
+            logger.exception(
+                "GameEngine olish/yaratishda xato "
+                "room=%s player=%s",
+                room_id,
+                telegram_id,
+            )
 
-    # MUHIM: pastdagi try blokida hech qanday "return" ISHLATILMAYDI.
-    # Sababi: try/except/else'da "else" faqat try bloki ISTISNOSIZ VA
-    # ERTA "return"SIZ oxirigacha yetganda ishga tushadi — agar try
-    # ichida return bo'lsa, else o'tkazib yuboriladi. Shu bois "forfeit
-    # qilingan o'yinchi" holati ham if/else orqali, alohida return'siz
-    # ifodalangan — shunda manager.disconnect() HAR DOIM aniq BITTA
-    # marta (ikki marta emas, nol marta emas) chaqiriladi:
-    #   - WebSocketDisconnect / kutilmagan xato -> disconnect_player()
-    #     (bu funksiya manager.disconnect()ni o'zi ham bajaradi)
-    #   - boshqa har qanday holat (forfeit qilingan YOKI o'yin
-    #     muvaffaqiyatli yakunlangan) -> else -> manager.disconnect()
-    try:
-        can_continue = await send_initial_state(
-            websocket=websocket,
-            room_id=room_id,
-            telegram_id=telegram_id,
-            game=game,
-        )
+            await _safe_close(
+                websocket,
+                status.WS_1011_INTERNAL_ERROR,
+            )
+            return
 
-        if can_continue:
+        # ---------------------------------------------------------
+        # 2. WebSocket connectionni manager'ga qo'shish
+        # ---------------------------------------------------------
+        try:
+            await manager.connect(
+                room_id,
+                telegram_id,
+                websocket,
+            )
+
+        except WebSocketDisconnect:
+            logger.info(
+                "Player %s ulanish vaqtida uzildi room=%s",
+                telegram_id,
+                room_id,
+            )
+            return
+
+        except Exception:
+            logger.exception(
+                "WebSocket ulanishida xato "
+                "room=%s player=%s",
+                room_id,
+                telegram_id,
+            )
+            return
+
+        # ---------------------------------------------------------
+        # 3. Initial state + message loop
+        # ---------------------------------------------------------
+        try:
+            can_continue = await send_initial_state(
+                websocket=websocket,
+                room_id=room_id,
+                telegram_id=telegram_id,
+                game=game,
+            )
+
+            if not can_continue:
+                manager.disconnect(
+                    room_id,
+                    telegram_id,
+                    websocket,
+                )
+                return
+
             await message_loop(
                 websocket=websocket,
                 db=db,
@@ -150,44 +160,70 @@ async def websocket_handler(
                 game=game,
             )
 
-    except WebSocketDisconnect:
-        logger.info(
-            "Player %s disconnected from room %s",
-            telegram_id,
-            room_id,
-        )
-        await disconnect_player(
-            room_id=room_id,
-            telegram_id=telegram_id,
-            websocket=websocket,
-            game=game,
-        )
+        # ---------------------------------------------------------
+        # 4. Haqiqiy disconnect
+        # ---------------------------------------------------------
+        except WebSocketDisconnect:
+            logger.info(
+                "Player disconnected "
+                "room=%s player=%s",
+                room_id,
+                telegram_id,
+            )
 
-    except Exception:
-        logger.exception(
-            "Unexpected websocket error room=%s player=%s",
-            room_id,
-            telegram_id,
-        )
-        await disconnect_player(
-            room_id=room_id,
-            telegram_id=telegram_id,
-            websocket=websocket,
-            game=game,
-        )
+            await disconnect_player(
+                room_id=room_id,
+                telegram_id=telegram_id,
+                websocket=websocket,
+                game=game,
+            )
 
-    else:
-        # Bu yerga ikki holatda kelinadi: (1) o'yinchi forfeit qilingan
-        # edi (initial_state.py websocket'ni allaqachon yopgan), yoki
-        # (2) message_loop xatosiz tugadi (o'yin g'alaba bilan
-        # yakunlandi). Ikkalasi ham "disconnect" emas — shuning uchun
-        # disconnect_player() emas, faqat ulanishni manager'dan
-        # tozalovchi qism chaqiriladi.
-        try:
-            manager.disconnect(room_id, telegram_id, websocket)
+        # ---------------------------------------------------------
+        # 5. Kutilmagan xato
+        # ---------------------------------------------------------
         except Exception:
             logger.exception(
-                "manager.disconnect xatosi room=%s player=%s",
+                "Unexpected websocket error "
+                "room=%s player=%s",
+                room_id,
+                telegram_id,
+            )
+
+            await disconnect_player(
+                room_id=room_id,
+                telegram_id=telegram_id,
+                websocket=websocket,
+                game=game,
+            )
+
+        # ---------------------------------------------------------
+        # 6. Message loop normal tugagan holat
+        # ---------------------------------------------------------
+        else:
+            try:
+                manager.disconnect(
+                    room_id,
+                    telegram_id,
+                    websocket,
+                )
+
+            except Exception:
+                logger.exception(
+                    "manager.disconnect xatosi "
+                    "room=%s player=%s",
+                    room_id,
+                    telegram_id,
+                )
+
+    finally:
+        # authenticate_websocket() yaratgan DB generatorni yopamiz.
+        try:
+            auth.db_gen.close()
+
+        except Exception:
+            logger.exception(
+                "DB generatorni yopishda xato "
+                "room=%s player=%s",
                 room_id,
                 telegram_id,
             )
@@ -202,12 +238,23 @@ async def message_loop(
     game: GameEngine,
 ) -> None:
     """
-    Asosiy WebSocket message loop: xabar qabul qilish, heartbeat,
-    action dispatch, state broadcast, g'alabani tekshirish.
+    Asosiy WebSocket message loop.
+
+    Vazifalari:
+
+    - Client xabarini qabul qilish
+    - Heartbeat timeoutni nazorat qilish
+    - Action dispatch
+    - Game state broadcast
+    - Action event broadcast
+    - Winner aniqlanganda finish_game() chaqirish
     """
 
     while True:
 
+        # ---------------------------------------------------------
+        # 1. Client xabarini kutish
+        # ---------------------------------------------------------
         try:
             data = await asyncio.wait_for(
                 websocket.receive_json(),
@@ -216,13 +263,22 @@ async def message_loop(
 
         except asyncio.TimeoutError:
             logger.info(
-                "Heartbeat timeout room=%s player=%s",
+                "Heartbeat timeout "
+                "room=%s player=%s",
                 room_id,
                 telegram_id,
             )
-            await _safe_close(websocket, status.WS_1001_GOING_AWAY)
-            raise WebSocketDisconnect()
 
+            await _safe_close(
+                websocket,
+                status.WS_1001_GOING_AWAY,
+            )
+
+            raise WebSocketDisconnect
+
+        # ---------------------------------------------------------
+        # 2. Xabar formatini tekshirish
+        # ---------------------------------------------------------
         if not isinstance(data, dict):
             continue
 
@@ -239,10 +295,15 @@ async def message_loop(
             )
             continue
 
-        # heartbeat
+        # ---------------------------------------------------------
+        # 3. Heartbeat
+        # ---------------------------------------------------------
         if action == "ping":
             continue
 
+        # ---------------------------------------------------------
+        # 4. Action dispatch
+        # ---------------------------------------------------------
         result = await handle_action(
             game=game,
             telegram_id=telegram_id,
@@ -260,10 +321,17 @@ async def message_loop(
             )
             continue
 
-        # O'yin holatini hamma o'yinchiga yuborish
-        await manager.broadcast_state(room_id, game)
+        # ---------------------------------------------------------
+        # 5. Game state broadcast
+        # ---------------------------------------------------------
+        await manager.broadcast_state(
+            room_id,
+            game,
+        )
 
-        # Qo'shimcha eventlar (call_uno / catch_uno)
+        # ---------------------------------------------------------
+        # 6. Maxsus action eventlar
+        # ---------------------------------------------------------
         await broadcast_action_event(
             room_id=room_id,
             action=action,
@@ -271,7 +339,9 @@ async def message_loop(
             result=result,
         )
 
-        # Winner tekshirish
+        # ---------------------------------------------------------
+        # 7. Winner tekshirish
+        # ---------------------------------------------------------
         if game.winner is not None:
             finished = await finish_game(
                 db=db,
@@ -292,9 +362,7 @@ async def broadcast_action_event(
     result: dict,
 ) -> None:
     """
-    call_uno / catch_uno kabi harakatlar uchun qo'shimcha eventlarni
-    broadcast qiladi. Bu yordamchi funksiya handlerni kerak bo'lmagan
-    if/elif zanjiridan xoli qilish uchun ajratilgan.
+    call_uno / catch_uno kabi maxsus action eventlarini broadcast qiladi.
     """
 
     if action == "call_uno":
@@ -317,4 +385,3 @@ async def broadcast_action_event(
                 "penalty": result.get("penalty"),
             },
         )
-        

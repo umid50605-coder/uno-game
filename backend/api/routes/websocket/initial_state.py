@@ -1,6 +1,8 @@
 """
 Initial state helper.
 
+backend/api/routes/websocket/initial_state.py
+
 Vazifalari:
 
 - Initial state yuborish

@@ -35,6 +35,7 @@ logger = logging.getLogger(__name__)
 class AuthResult:
     telegram_id: int
     room_player_ids: list[int]
+    player_names: dict[int, str]
     db: Session
     db_gen: Generator[Session, None, None]
 
@@ -137,10 +138,3 @@ async def authenticate_websocket(
         )
         await _reject(websocket, status.WS_1011_INTERNAL_ERROR, db_gen)
         return None
-
-    return AuthResult(
-        telegram_id=telegram_id,
-        room_player_ids=room_player_ids,
-        db=db,
-        db_gen=db_gen,
-    )

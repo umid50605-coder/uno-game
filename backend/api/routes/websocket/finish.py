@@ -1,6 +1,8 @@
 """
 Game finish helpers.
 
+backend/api/routes/websocket/finish.py
+
 Vazifalari:
 
 - O'yinni xavfsiz yakunlash
@@ -18,9 +20,9 @@ from services.game_engine import GameEngine
 from services.rating_service import apply_game_result
 from services.room_service import finish_room
 
-from .game_factory import remove_game
 from .state import (
     game_finish_lock,
+    game_manager,
     manager,
 )
 
@@ -127,12 +129,13 @@ async def finish_game(
             )
 
         try:
-            await remove_game(
+            game_manager.remove(
                 room_id,
             )
         except Exception:
             logger.exception(
-                "remove_game muvaffaqiyatsiz room=%s",
+                "remove_game muvaffaqiyatsiz "
+                "room=%s",
                 room_id,
             )
 
@@ -216,7 +219,7 @@ async def cancel_game(
             )
 
         try:
-            await remove_game(
+            game_manager.remove(
                 room_id,
             )
         except Exception:

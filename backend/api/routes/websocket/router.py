@@ -1,6 +1,8 @@
 """
 WebSocket endpoint (routing layer).
 
+backend/api/routes/websocket/router.py
+
 Vazifalari:
 - FastAPI WebSocket route'ini e'lon qilish
 - So'rov parametrlarini olish (token, room_id)
@@ -38,7 +40,7 @@ async def game_websocket(
 
     try:
         db = next(db_gen)
-        await websocket_handler(websocket, token, room_id, db)
+        await websocket_handler(websocket, token, room_id)
     finally:
         try:
             db_gen.close()

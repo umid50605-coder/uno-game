@@ -1,6 +1,8 @@
 """
 Disconnect watcher — grace period tugagan playerlarni forfeit qiladi.
 
+backend/api/routes/websocket/disconnect_watcher.py
+
 Vazifalari:
 
 - Har 5 soniyada barcha faol o'yinlarni tekshirish
@@ -24,8 +26,7 @@ from .finish import (
     finish_game,
 )
 from .state import (
-    active_games,
-    game_create_lock,
+    game_manager,
     manager,
 )
 
@@ -182,9 +183,8 @@ async def disconnect_watcher() -> None:
             continue
 
         try:
-            async with game_create_lock:
 
-                games_snapshot = list(active_games.items())
+            games_snapshot = game_manager.items()
 
             for room_id, game in games_snapshot:
                 try:

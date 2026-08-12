@@ -306,8 +306,14 @@ class GameEngine:
             self.winner = self.player_ids[0]
             return {"ok": True, "forfeited": player_id, "winner": self.winner}
 
-        if idx < self.current_index:
+        if was_current:
+            if self.direction == 1:
+                self.current_index = idx % len(self.player_ids)
+            else:
+                self.current_index = (idx - 1) % len(self.player_ids)
+        elif idx < self.current_index:
             self.current_index -= 1
+
         self.current_index %= len(self.player_ids)
 
         return {"ok": True, "forfeited": player_id}
