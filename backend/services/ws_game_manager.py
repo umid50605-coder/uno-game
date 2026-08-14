@@ -1,3 +1,6 @@
+"""
+backend/services/ws_game_manager.py
+"""
 from threading import RLock
 
 from services.game_engine import GameEngine

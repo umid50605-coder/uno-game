@@ -274,7 +274,7 @@ async def message_loop(
                 status.WS_1001_GOING_AWAY,
             )
 
-            raise WebSocketDisconnect
+            raise WebSocketDisconnect()
 
         # ---------------------------------------------------------
         # 2. Xabar formatini tekshirish

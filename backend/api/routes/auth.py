@@ -1,3 +1,6 @@
+"""
+backend/api/routes/auth.py
+"""
 import logging
 
 from fastapi import APIRouter, Depends

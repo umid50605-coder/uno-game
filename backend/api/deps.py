@@ -1,3 +1,6 @@
+"""
+backend/api/deps.py 
+"""
 import logging
 
 from fastapi import Depends, Header, HTTPException, status

@@ -5,23 +5,21 @@ backend/api/routes/websocket/router.py
 
 Vazifalari:
 - FastAPI WebSocket route'ini e'lon qilish
-- So'rov parametrlarini olish (token, room_id)
-- DB sessiyasi hayot davrini boshqarish
-- Haqiqiy ishni handler.websocket_handler()ga topshirish
+- token va room_id parametrlarini olish
+- Haqiqiy ishni handler.websocket_handler() ga topshirish
 
-Bu fayl atayin "ingichka" qilib qoldirilgan — validatsiya, o'yin holati,
-xabar loopi kabi hech qanday logika bu yerda emas.
+Bu faylda:
+- authentication yo'q
+- DB session yo'q
+- game logic yo'q
+- message loop yo'q
+- disconnect logic yo'q
 """
 
-from fastapi import (
-    APIRouter,
-    Query,
-    WebSocket,
-)
-
-from api.deps import get_db
+from fastapi import APIRouter, Query, WebSocket
 
 from .handler import websocket_handler
+
 
 router = APIRouter()
 
@@ -33,16 +31,14 @@ async def game_websocket(
     room_id: int = Query(...),
 ) -> None:
     """
-    O'yin WebSocket endpoint.
+    UNO o'yini uchun WebSocket endpoint.
+
+    Routing qatlamining vazifasi faqat requestni
+    websocket_handler() ga topshirish.
     """
 
-    db_gen = get_db()
-
-    try:
-        db = next(db_gen)
-        await websocket_handler(websocket, token, room_id)
-    finally:
-        try:
-            db_gen.close()
-        except Exception:
-            pass
+    await websocket_handler(
+        websocket=websocket,
+        token=token,
+        room_id=room_id,
+    )

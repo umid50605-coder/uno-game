@@ -1,4 +1,6 @@
 """
+backend/services/game_engine.py
+
 Stage 12/14 — Game Engine
 Toza, sinxron UNO o'yin mexanikasi. Bitta xona = bitta GameEngine instansi
 (xotirada saqlanadi, DB'ga yozilmaydi).
