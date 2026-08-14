@@ -77,4 +77,3 @@ class GameManager:
     def __len__(self) -> int:
         with self._lock:
             return len(self._games)
-        
