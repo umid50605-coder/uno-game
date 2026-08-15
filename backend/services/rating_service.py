@@ -1,4 +1,5 @@
 """
+backend/services/rating_service.py 
 Stage 12.1 — Reyting xizmati.
 
 backend/services/rating_service.py

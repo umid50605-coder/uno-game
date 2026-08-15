@@ -1,3 +1,6 @@
+"""
+backend/main.py 
+"""
 import asyncio
 import logging
 
@@ -11,6 +14,7 @@ from aiogram.types import Update
 from bot.handlers.start import router as start_router
 
 from api.routes import auth, game, rooms, users
+from api.routes.websocket.disconnect_watcher import disconnect_watcher
 
 from core.config import get_settings
 from core.database import Base, SessionLocal, engine
@@ -112,7 +116,7 @@ async def startup():
     # Background vazifalarni ishga tushirish
     app.state.cleanup_task = asyncio.create_task(_room_cleanup_loop())
     app.state.disconnect_task = asyncio.create_task(
-        game.disconnect_watcher()
+        disconnect_watcher()
     )
 
     try:

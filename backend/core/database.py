@@ -1,4 +1,5 @@
 """
+backend/core/database.py 
 core/database.py — SQLAlchemy engine, session factory, va Base klassi.
 
 Stage 14 uchun tekshirildi: disconnect_watcher() va _room_cleanup_loop()
