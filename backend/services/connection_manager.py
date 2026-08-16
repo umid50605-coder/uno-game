@@ -68,4 +68,3 @@ class ConnectionManager:
 
     def is_connected(self, room_id: int, player_id: int) -> bool:
         return player_id in self.rooms.get(room_id, {})
- 

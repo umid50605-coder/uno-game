@@ -86,6 +86,7 @@ async def authenticate_websocket(
         return None
 
     if payload is None:
+        logger.warning("WS AUTH FAIL: JWT invalid")
         await _reject(websocket, status.WS_1008_POLICY_VIOLATION)
         return None
 
@@ -118,18 +119,56 @@ async def authenticate_websocket(
         )
 
         if room is None:
+            logger.warning(
+                "WS AUTH FAIL: room not found room=%s telegram_id=%s",
+                room_id,
+                telegram_id,
+            )
             await _reject(websocket, status.WS_1008_POLICY_VIOLATION, db_gen)
             return None
 
         if room.status != RoomStatus.PLAYING:
+            logger.warning(
+                "WS AUTH FAIL: room status=%s room=%s telegram_id=%s",
+                room.status,
+                room_id,
+                telegram_id,
+            )
             await _reject(websocket, status.WS_1008_POLICY_VIOLATION, db_gen)
             return None
 
         room_player_ids = get_room_player_ids(db, room_id)
 
+        player_names = {
+            p.user.telegram_id: p.user.first_name
+            for p in room.players
+        }
+
+        logger.info(
+            "WS AUTH: room=%s telegram_id=%s players=%s status=%s",
+            room_id,
+            telegram_id,
+            room_player_ids,
+            room.status,
+        )
+
         if telegram_id not in room_player_ids:
+            logger.warning(
+                "WS AUTH FAIL: player roomda yo'q "
+                "room=%s telegram_id=%s players=%s",
+                room_id,
+                telegram_id,
+                room_player_ids,
+            )
             await _reject(websocket, status.WS_1008_POLICY_VIOLATION, db_gen)
             return None
+        return AuthResult(
+            telegram_id=telegram_id,
+            room_player_ids=room_player_ids,
+            player_names=player_names,
+            db=db,
+            db_gen=db_gen,
+        )
 
     except Exception:
         logger.exception(
