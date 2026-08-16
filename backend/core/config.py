@@ -27,17 +27,17 @@ class Settings:
         self.JWT_SECRET = self._require_env("JWT_SECRET")
         self.WEBHOOK_SECRET = self._require_env("WEBHOOK_SECRET")
 
+        self.JWT_ALGORITHM = os.getenv(
+            "JWT_ALGORITHM",
+            "HS256",
+        )
+
         allowed_algorithms = {"HS256", "HS384", "HS512"}
 
         if self.JWT_ALGORITHM not in allowed_algorithms:
             raise RuntimeError(
                 "JWT_ALGORITHM noto'g'ri."
             )
-
-        self.JWT_ALGORITHM = os.getenv(
-            "JWT_ALGORITHM",
-            "HS256",
-        )
 
         try:
             self.JWT_EXPIRE_MINUTES = int(
