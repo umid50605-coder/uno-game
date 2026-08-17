@@ -4,7 +4,6 @@ import { WS_BASE } from "./config.js";
 
 const RECONNECT_DELAYS_MS = [1000, 2000, 5000, 10000];
 const MAX_RECONNECT_ATTEMPTS = 8;
-const HEARTBEAT_INTERVAL_MS = 8000;
 
 class WSClient {
   constructor() {
@@ -15,7 +14,12 @@ class WSClient {
     this.intentionalClose = false;
     this.reconnectAttempt = 0;
     this.reconnectTimer = null;
+
     this.heartbeatTimer = null;
+    this.pongTimeoutTimer = null;
+
+    this.HEARTBEAT_INTERVAL_MS = 5000;
+    this.PONG_TIMEOUT_MS = 3000;
   }
 
   connect(roomId, token) {
@@ -56,6 +60,11 @@ class WSClient {
 
       const data = JSON.parse(event.data);
 
+      if (data.type === "pong"){
+        this._handlePong();
+        return;
+      }
+
       (this.handlers[data.type] || []).forEach(fn => fn(data));
     };
 
@@ -94,18 +103,36 @@ class WSClient {
   }
 
   _startHeartbeat() {
+    this._stopHeartbeat();
 
     console.log("Heartbeat started");
 
-    this._stopHeartbeat();
-
     this.heartbeatTimer = setInterval(() => {
+      if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
+        return;
+      }
 
-        console.log("PING");
+      console.log("PING");
+      
+      this.send("ping");
 
-        this.send("ping");
+      this._startPongTimeout();
 
-    }, 8000);
+    }, this.HEARTBEAT_INTERVAL_MS);
+  }
+
+  _startPongTimeout() {
+    this._startPongTimeout();
+
+    this.pongTimeoutTimer = setTimeout(() => {
+
+      console.log("PONG TIMEOUT");
+
+      if (this.socket && this.socket.readyState === WebSocket.OPEN) {
+        this.socket.close(4000, "Heartbeat timeout");
+      }
+
+    }, this.PONG_TIMEOUT_MS);
   }
 
   _stopHeartbeat() {
@@ -113,6 +140,21 @@ class WSClient {
       clearInterval(this.heartbeatTimer);
       this.heartbeatTimer = null;
     }
+
+    this._stopPongTimeout();
+  }
+
+  _stopPongTimeout() {
+    if (this.pongTimeoutTimer) {
+      clearTimeout(this.pongTimeoutTimer);
+      this.pongTimeoutTimer = null;
+    }
+  }
+
+  _handlePong() {
+    console.log("PONG");
+
+    this._stopPongTimeout();
   }
 
   on(type, fn) {

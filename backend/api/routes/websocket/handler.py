@@ -35,7 +35,6 @@ from .disconnect import disconnect_player
 from .finish import finish_game
 from .initial_state import send_initial_state
 from .state import (
-    HEARTBEAT_TIMEOUT_SECONDS,
     game_manager,
     manager,
 )
@@ -256,10 +255,7 @@ async def message_loop(
         # 1. Client xabarini kutish
         # ---------------------------------------------------------
         try:
-            data = await asyncio.wait_for(
-                websocket.receive_json(),
-                timeout=HEARTBEAT_TIMEOUT_SECONDS,
-            )
+            data = await websocket.receive_json()
 
         except asyncio.TimeoutError:
             logger.info(
@@ -299,6 +295,13 @@ async def message_loop(
         # 3. Heartbeat
         # ---------------------------------------------------------
         if action == "ping":
+            await manager.send_personal(
+                room_id,
+                telegram_id,
+                {
+                    "type": "pong",
+                }
+            )
             continue
 
         # ---------------------------------------------------------
