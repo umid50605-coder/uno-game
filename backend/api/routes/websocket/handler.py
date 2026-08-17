@@ -253,11 +253,8 @@ async def message_loop(
         # ---------------------------------------------------------
         # 1. Client xabarini kutish
         # ---------------------------------------------------------
-        try:
-            data = await websocket.receive_json()
-
-        except WebSocketDisconnect:
-            raise
+        
+        data = await websocket.receive_json()
 
         # ---------------------------------------------------------
         # 2. Xabar formatini tekshirish

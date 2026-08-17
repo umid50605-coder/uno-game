@@ -20,5 +20,3 @@ manager = ConnectionManager()
 game_manager = GameManager()
 
 game_finish_lock = asyncio.Lock()
-
-HEARTBEAT_TIMEOUT_SECONDS = 12
