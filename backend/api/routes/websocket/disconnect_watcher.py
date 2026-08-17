@@ -102,6 +102,8 @@ async def _process_expired_player(
         game.player_ids,
     )
 
+    db.commit()
+
     try:
         await manager.broadcast_state(
             room_id,
