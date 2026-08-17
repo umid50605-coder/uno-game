@@ -41,7 +41,6 @@ def record_forfeit_disconnect(db: Session, telegram_id: int) -> dict:
     disconnect_watcher'dan). Yangi log yozadi, so'ng zinapoyaga qarab
     User'ni bloklaydi."""
     db.add(DisconnectLog(telegram_id=telegram_id))
-    db.commit()
 
     count = _count_recent_disconnects(db, telegram_id)
     user = db.query(User).filter(User.telegram_id == telegram_id).first()
@@ -68,7 +67,6 @@ def record_forfeit_disconnect(db: Session, telegram_id: int) -> dict:
             user.locked_until = candidate
         tier = "tier1"
 
-    db.commit()
     return {
         "count": count,
         "tier": tier,
