@@ -23,7 +23,7 @@ def apply_game_result(db: Session, player_ids: list[int], winner_id: int, via_fo
     via_forfeit=True bo'lsa, bu g'alaba raqib uzilib forfeit bo'lgani uchun qozonilgan
     (halol o'yin orqali emas) — shunda winner.forfeit_wins ham +1 bo'ladi."""
     users = db.query(User).filter(User.telegram_id.in_(player_ids)).all()
-
+    db.commit()
     for user in users:
         user.games_played += 1
         if user.telegram_id == winner_id:
@@ -47,6 +47,7 @@ def apply_forfeit_result(db: Session, forfeiter_id: int, remaining_ids: list[int
     o'zaro teng bo'lib, bonus sifatida olishadi (games_played ularda hali
     oshmaydi)."""
     forfeiter = db.query(User).filter(User.telegram_id == forfeiter_id).first()
+    db.commit()
     if forfeiter is not None:
         forfeiter.games_played += 1
         forfeiter.rating = max(0, forfeiter.rating - RATING_LOSS)
