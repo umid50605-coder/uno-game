@@ -90,6 +90,8 @@ async def finish_game(
                 room_id,
             )
 
+            db.commit()
+
         except Exception:
 
             game.finished = False
@@ -186,6 +188,9 @@ async def cancel_game(
                 db,
                 room_id,
             )
+
+            db.commit()
+            
         except Exception:
 
             game.finished = False

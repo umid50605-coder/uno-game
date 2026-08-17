@@ -1,3 +1,6 @@
+"""
+backend/models/room.py
+"""
 import enum
 import random
 import string

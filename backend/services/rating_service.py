@@ -34,7 +34,6 @@ def apply_game_result(db: Session, player_ids: list[int], winner_id: int, via_fo
         else:
             user.rating = max(0, user.rating - RATING_LOSS)
 
-    db.commit()
     logger.info(
         "Reyting yangilandi: g'olib=%s (forfeit=%s), ishtirokchilar=%s",
         winner_id, via_forfeit, player_ids,
@@ -58,7 +57,6 @@ def apply_forfeit_result(db: Session, forfeiter_id: int, remaining_ids: list[int
         for user in remaining_users:
             user.rating += share
 
-    db.commit()
     logger.info(
         "Forfeit ball: chiqqan=%s (games_played+1, rating-%d), qolganlar=%s (+%d/kishi)",
         forfeiter_id,

@@ -1,3 +1,6 @@
+"""
+backend/models/user.py 
+"""
 from datetime import datetime, timezone
 
 from sqlalchemy import BigInteger, Boolean, DateTime, Integer, String

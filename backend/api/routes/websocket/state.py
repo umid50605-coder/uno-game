@@ -7,7 +7,6 @@ Vazifalari:
 - ConnectionManager instance
 - GameManager instance
 - Game finish lock
-- Heartbeat timeout
 """
 
 import asyncio

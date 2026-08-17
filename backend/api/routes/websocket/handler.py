@@ -255,7 +255,6 @@ async def message_loop(
         # ---------------------------------------------------------
         
         data = await websocket.receive_json()
-
         # ---------------------------------------------------------
         # 2. Xabar formatini tekshirish
         # ---------------------------------------------------------
@@ -284,7 +283,7 @@ async def message_loop(
                 telegram_id,
                 {
                     "type": "pong",
-                }
+                },
             )
             continue
 

@@ -1,4 +1,5 @@
 """
+backend/services/abuse_service.py 
 Stage 14 — uzilishni suiiste'mol qilishning oldini olish.
 
 Qoida: faqat forfeit'gacha borgan uzilishlar sanaladi (grace period ichida

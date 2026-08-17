@@ -1,4 +1,5 @@
 """
+backend/services/connection_manager.py
 Stage 13-14 — WebSocket Connection Manager
 
 Stage 14'da qo'shildi:
@@ -32,17 +33,35 @@ class ConnectionManager:
         if not room:
             del self.rooms[room_id]
 
-    async def send_personal(self, room_id: int, player_id: int, message: dict):
-        ws = self.rooms.get(room_id, {}).get(player_id)
-        if ws is not None:
-            try:
-                await ws.send_json(message)
-            except Exception:
-                pass
+    async def send_personal(
+        self, 
+        room_id: int, 
+        player_id: int, 
+        message: dict
+    ):
+        room = self.rooms.get(room_id)
+
+        if room is None:
+            return
+
+        ws = room.get(player_id)
+
+        if ws is None:
+            return
+
+        try:
+            await ws.send_json(message)
+
+        except Exception:
+            self.disconnect(
+                room_id,
+                player_id,
+                ws,
+            )
 
     async def broadcast_state(self, room_id: int, game_engine, exclude: int | None = None):
         room = self.rooms.get(room_id, {})
-        dead: list[int] = []
+        dead: list[tuple[int, WebSocket]] = []
         for player_id, ws in list(room.items()):
             if player_id == exclude:
                 continue
@@ -51,20 +70,28 @@ class ConnectionManager:
                 await ws.send_json(state)
             except Exception as e:
                 print(f"[WS] SEND ERROR {player_id}: {e}")
-                dead.append(player_id)
-        for player_id in dead:
-            room.pop(player_id, None)
+                dead.append((player_id, ws))
+        for player_id, ws in dead:
+            self.disconnect(
+                room_id,
+                player_id,
+                ws,
+            )
 
     async def broadcast_raw(self, room_id: int, message: dict):
         room = self.rooms.get(room_id, {})
-        dead: list[int] = []
+        dead: list[tuple[int, WebSocket]] = []
         for player_id, ws in list(room.items()):
             try:
                 await ws.send_json(message)
             except Exception:
-                dead.append(player_id)
-        for player_id in dead:
-            room.pop(player_id, None)
+                dead.append((player_id, ws))
+        for player_id, ws in dead:
+            self.disconnect(
+                room_id,
+                player_id,
+                ws,
+            )
 
     def is_connected(self, room_id: int, player_id: int) -> bool:
         return player_id in self.rooms.get(room_id, {})

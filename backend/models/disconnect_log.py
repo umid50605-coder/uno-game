@@ -1,4 +1,5 @@
 """
+backend/models/disconnect_log.py 
 Stage 14 — uzilish jurnali (abuse tracking).
 Faqat FORFEIT'ga olib kelgan uzilishlar shu yerga yoziladi (oddiy, faqat
 qo'shish uchun jurnal). Sliding-window sanoq uchun ishlatiladi — soat

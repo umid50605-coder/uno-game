@@ -1,3 +1,6 @@
+"""
+backend/services/auth_service.py 
+"""
 import json
 import logging
 

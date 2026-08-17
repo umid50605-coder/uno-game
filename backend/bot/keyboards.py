@@ -1,3 +1,6 @@
+"""
+backend/bot/keyboards.py
+"""
 from aiogram.types import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,

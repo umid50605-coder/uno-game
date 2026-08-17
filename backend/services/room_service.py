@@ -1,3 +1,6 @@
+"""
+backend/services/room_service.py
+"""
 import logging
 from datetime import datetime, timezone, timedelta
 
@@ -354,11 +357,13 @@ def cleanup_stale_rooms(db: Session) -> None:
         db.commit()
 
 def finish_room(db: Session, room_id: int) -> None:
-    """O'yin tugagach (game.py'dan, ham oddiy g'alaba, ham forfeit holatida)
-    chaqiriladi — xona holatini yakunlangan deb belgilaydi, shunda room.js
-    noto'g'ri ravishda qayta o'yinga (arvoh sifatida) qaytarib yubormaydi."""
+    """O'yin tugagach xona statusini FINISHED qiladi."""
     room = db.query(Room).filter(Room.id == room_id).first()
-    if room is not None and room.status != RoomStatus.FINISHED:
+
+    if room is not None and room.status !=RoomStatus.FINISHED:
         room.status = RoomStatus.FINISHED
-        db.commit()
-        logger.info("Xona %s yakunlandi (o'yin tugadi).", room.code)
+
+        logger.info(
+            "Xona %s yakunlandi (o'yin tugadi).",
+            room.code,
+        )
