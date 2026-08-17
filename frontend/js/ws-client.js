@@ -27,6 +27,9 @@ class WSClient {
     this.token = token;
     this.intentionalClose = false;
     this.reconnectAttempt = 0;
+
+    this._stopHeartbeat();
+
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
