@@ -17,7 +17,6 @@ Bu fayl boshqa modullarning ichki logikasini bajarmaydi.
 U faqat WebSocket lifecycle'ini orchestration qiladi.
 """
 
-import asyncio
 import logging
 
 from fastapi import (
@@ -257,20 +256,8 @@ async def message_loop(
         try:
             data = await websocket.receive_json()
 
-        except asyncio.TimeoutError:
-            logger.info(
-                "Heartbeat timeout "
-                "room=%s player=%s",
-                room_id,
-                telegram_id,
-            )
-
-            await _safe_close(
-                websocket,
-                status.WS_1001_GOING_AWAY,
-            )
-
-            raise WebSocketDisconnect()
+        except WebSocketDisconnect:
+            raise
 
         # ---------------------------------------------------------
         # 2. Xabar formatini tekshirish
