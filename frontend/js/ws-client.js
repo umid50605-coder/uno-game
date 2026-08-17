@@ -122,7 +122,7 @@ class WSClient {
   }
 
   _startPongTimeout() {
-    this._startPongTimeout();
+    this._stopPongTimeout();
 
     this.pongTimeoutTimer = setTimeout(() => {
 
