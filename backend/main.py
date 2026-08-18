@@ -25,6 +25,7 @@ from models import room as room_model  # noqa: F401
 from models import user as user_model  # noqa: F401
 
 from services.room_service import cleanup_stale_rooms
+from services.self_ping import self_ping_loop
 
 
 # ==========================================================
@@ -119,6 +120,9 @@ async def startup():
     app.state.cleanup_task = asyncio.create_task(_room_cleanup_loop())
     app.state.disconnect_task = asyncio.create_task(
         disconnect_watcher()
+    )
+    app.state.self_ping_task = asyncio.create_task(
+        self_ping_loop(settings.WEBAPP_URL)
     )
 
     try:
