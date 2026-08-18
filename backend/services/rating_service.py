@@ -23,7 +23,6 @@ def apply_game_result(db: Session, player_ids: list[int], winner_id: int, via_fo
     via_forfeit=True bo'lsa, bu g'alaba raqib uzilib forfeit bo'lgani uchun qozonilgan
     (halol o'yin orqali emas) — shunda winner.forfeit_wins ham +1 bo'ladi."""
     users = db.query(User).filter(User.telegram_id.in_(player_ids)).all()
-    db.commit()
     for user in users:
         user.games_played += 1
         if user.telegram_id == winner_id:
@@ -33,6 +32,8 @@ def apply_game_result(db: Session, player_ids: list[int], winner_id: int, via_fo
                 user.forfeit_wins += 1
         else:
             user.rating = max(0, user.rating - RATING_LOSS)
+
+    db.commit()
 
     logger.info(
         "Reyting yangilandi: g'olib=%s (forfeit=%s), ishtirokchilar=%s",
@@ -47,7 +48,6 @@ def apply_forfeit_result(db: Session, forfeiter_id: int, remaining_ids: list[int
     o'zaro teng bo'lib, bonus sifatida olishadi (games_played ularda hali
     oshmaydi)."""
     forfeiter = db.query(User).filter(User.telegram_id == forfeiter_id).first()
-    db.commit()
     if forfeiter is not None:
         forfeiter.games_played += 1
         forfeiter.rating = max(0, forfeiter.rating - RATING_LOSS)
@@ -57,6 +57,8 @@ def apply_forfeit_result(db: Session, forfeiter_id: int, remaining_ids: list[int
         remaining_users = db.query(User).filter(User.telegram_id.in_(remaining_ids)).all()
         for user in remaining_users:
             user.rating += share
+
+    db.commit()
 
     logger.info(
         "Forfeit ball: chiqqan=%s (games_played+1, rating-%d), qolganlar=%s (+%d/kishi)",
