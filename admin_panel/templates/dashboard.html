@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}Statistika — UNO Admin{% endblock %}
+{% block content %}
+<h1>Statistika</h1>
+
+<div class="stat-grid">
+  <div class="stat-card">
+    <div class="stat-value">{{ total_users }}</div>
+    <div class="stat-label">Jami foydalanuvchilar</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-value">{{ active_rooms_count }}</div>
+    <div class="stat-label">Faol xonalar</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-value">{{ finished_rooms_count }}</div>
+    <div class="stat-label">Tugagan o'yinlar</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-value">{{ avg_rating }}</div>
+    <div class="stat-label">O'rtacha reyting</div>
+  </div>
+  <div class="stat-card {% if blacklisted_count > 0 %}stat-warn{% endif %}">
+    <div class="stat-value">{{ blacklisted_count }}</div>
+    <div class="stat-label">Blacklist qilingan</div>
+  </div>
+  <div class="stat-card {% if locked_count > 0 %}stat-warn{% endif %}">
+    <div class="stat-value">{{ locked_count }}</div>
+    <div class="stat-label">Hozir lock holatida</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-value">{{ total_disconnects }}</div>
+    <div class="stat-label">Jami disconnect hodisalari</div>
+  </div>
+  <div class="stat-card {% if disconnects_24h > 0 %}stat-warn{% endif %}">
+    <div class="stat-value">{{ disconnects_24h }}</div>
+    <div class="stat-label">So'nggi 24 soatda</div>
+  </div>
+</div>
+
+<div class="two-col">
+  <section class="panel">
+    <h2>Top-5 reyting</h2>
+    {% if top_rated %}
+    <table class="data-table">
+      <thead><tr><th>Foydalanuvchi</th><th>Reyting</th></tr></thead>
+      <tbody>
+        {% for u in top_rated %}
+        <tr>
+          <td><a href="/users/{{ u.id }}">{{ u.first_name }} {{ u.last_name or '' }} {% if u.username %}(@{{ u.username }}){% endif %}</a></td>
+          <td class="num">{{ u.rating }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="muted">Hozircha ma'lumot yo'q.</p>
+    {% endif %}
+  </section>
+
+  <section class="panel">
+    <h2>Ko'p forfeit qilganlar</h2>
+    <p class="muted small">Reyting bilan suiiste'mol qilish ehtimolini kuzatish uchun.</p>
+    {% if top_forfeiters %}
+    <table class="data-table">
+      <thead><tr><th>Foydalanuvchi</th><th>Forfeit soni</th></tr></thead>
+      <tbody>
+        {% for u in top_forfeiters %}
+        <tr>
+          <td><a href="/users/{{ u.id }}">{{ u.first_name }} {{ u.last_name or '' }} {% if u.username %}(@{{ u.username }}){% endif %}</a></td>
+          <td class="num">{{ u.times_forfeited }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="muted">Hozircha forfeit hodisasi yo'q.</p>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}

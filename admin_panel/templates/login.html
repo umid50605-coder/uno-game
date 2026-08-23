@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Kirish — UNO Admin{% endblock %}
+{% block content %}
+<div class="login-wrap">
+  <form class="login-card" method="post" action="/login">
+    <h1>UNO Admin</h1>
+    <p class="muted">Shaxsiy boshqaruv paneli</p>
+    {% if error %}<div class="alert alert-error">{{ error }}</div>{% endif %}
+    <label>
+      Login
+      <input type="text" name="username" autocomplete="username" required autofocus>
+    </label>
+    <label>
+      Parol
+      <input type="password" name="password" autocomplete="current-password" required>
+    </label>
+    <button type="submit" class="btn btn-primary btn-block">Kirish</button>
+  </form>
+</div>
+{% endblock %}

@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block title %}{{ user.first_name }} — UNO Admin{% endblock %}
+{% block content %}
+<p><a href="/users">&larr; Foydalanuvchilar ro'yxatiga qaytish</a></p>
+
+<h1>{{ user.first_name }} {{ user.last_name or '' }} {% if user.username %}<span class="muted">@{{ user.username }}</span>{% endif %}</h1>
+
+<div class="badges-row">
+  {% if user.is_blacklisted %}<span class="badge badge-danger">Blacklist qilingan</span>{% endif %}
+  {% if user.locked_until and user.locked_until > now %}<span class="badge badge-warn">Lock: {{ user.locked_until.strftime('%Y-%m-%d %H:%M') }} UTC gacha</span>{% endif %}
+  {% if not user.is_blacklisted and not (user.locked_until and user.locked_until > now) %}<span class="badge badge-ok">Faol</span>{% endif %}
+</div>
+
+<div class="two-col">
+  <section class="panel">
+    <h2>Ma'lumot</h2>
+    <table class="kv-table">
+      <tr><th>ID</th><td class="mono">{{ user.id }}</td></tr>
+      <tr><th>Telegram ID</th><td class="mono">{{ user.telegram_id }}</td></tr>
+      <tr><th>Til</th><td>{{ user.language_code or '—' }}</td></tr>
+      <tr><th>Premium</th><td>{{ 'Ha' if user.is_premium else 'Yo\'q' }}</td></tr>
+      <tr><th>Ro'yxatdan o'tgan</th><td>{{ user.created_at.strftime('%Y-%m-%d %H:%M') }} UTC</td></tr>
+      <tr><th>Yangilangan</th><td>{{ user.updated_at.strftime('%Y-%m-%d %H:%M') }} UTC</td></tr>
+    </table>
+
+    <h2>Tezkor amallar</h2>
+    <div class="btn-row">
+      <form method="post" action="/users/{{ user.id }}/unlock">
+        <input type="hidden" name="csrf_token" value="{{ admin.csrf_token }}">
+        <button type="submit" class="btn btn-secondary" {% if not (user.locked_until and user.locked_until > now) %}disabled{% endif %}>
+          &#128275; Unlock qilish
+        </button>
+      </form>
+      <form method="post" action="/users/{{ user.id }}/toggle-blacklist"
+            onsubmit="return confirm('{% if user.is_blacklisted %}Blacklistdan chiqarilsinmi?{% else %}Rostdan ham blacklistga qo\'shilsinmi?{% endif %}');">
+        <input type="hidden" name="csrf_token" value="{{ admin.csrf_token }}">
+        <button type="submit" class="btn {% if user.is_blacklisted %}btn-secondary{% else %}btn-danger{% endif %}">
+          {% if user.is_blacklisted %}Blacklistdan chiqarish{% else %}Blacklistga qo'shish{% endif %}
+        </button>
+      </form>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>Statistikani tahrirlash</h2>
+    <form method="post" action="/users/{{ user.id }}/edit" class="edit-form">
+      <input type="hidden" name="csrf_token" value="{{ admin.csrf_token }}">
+      <label>Reyting
+        <input type="number" name="rating" value="{{ user.rating }}" min="0" required>
+      </label>
+      <label>O'ynalgan o'yinlar
+        <input type="number" name="games_played" value="{{ user.games_played }}" min="0" required>
+      </label>
+      <label>G'alabalar
+        <input type="number" name="wins" value="{{ user.wins }}" min="0" required>
+      </label>
+      <label>Forfeit orqali g'alabalar
+        <input type="number" name="forfeit_wins" value="{{ user.forfeit_wins }}" min="0" required>
+      </label>
+      <label>Necha marta forfeit qilgan
+        <input type="number" name="times_forfeited" value="{{ user.times_forfeited }}" min="0" required>
+      </label>
+      <label>Lock muddati (bo'sh — lock yo'q)
+        <input type="datetime-local" name="locked_until"
+               value="{{ user.locked_until.strftime('%Y-%m-%dT%H:%M') if user.locked_until else '' }}">
+      </label>
+      <button type="submit" class="btn btn-primary">Saqlash</button>
+    </form>
+  </section>
+</div>
+
+<section class="panel">
+  <h2>So'nggi disconnect hodisalari</h2>
+  {% if recent_disconnects %}
+  <table class="data-table">
+    <thead><tr><th>Vaqt (UTC)</th></tr></thead>
+    <tbody>
+      {% for d in recent_disconnects %}
+      <tr><td>{{ d.occurred_at.strftime('%Y-%m-%d %H:%M:%S') }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">Bu foydalanuvchi uchun disconnect hodisasi qayd etilmagan.</p>
+  {% endif %}
+</section>
+{% endblock %}

@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}Loglar — UNO Admin{% endblock %}
+{% block content %}
+<h1>Disconnect / forfeit loglari <span class="muted small">({{ total }})</span></h1>
+
+<form method="get" action="/logs" class="search-form">
+  <input type="text" name="telegram_id" value="{{ telegram_id }}" placeholder="telegram_id bo'yicha filtr...">
+  <button type="submit" class="btn btn-primary">Filtrlash</button>
+  {% if telegram_id %}<a href="/logs" class="btn btn-ghost">Tozalash</a>{% endif %}
+</form>
+
+<table class="data-table">
+  <thead>
+    <tr>
+      <th>Vaqt (UTC)</th>
+      <th>Telegram ID</th>
+      <th>Foydalanuvchi</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for log in logs %}
+    {% set u = users_by_tg_id.get(log.telegram_id) %}
+    <tr>
+      <td class="mono">{{ log.occurred_at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+      <td class="mono">{{ log.telegram_id }}</td>
+      <td>
+        {% if u %}<a href="/users/{{ u.id }}">{{ u.first_name }} {% if u.username %}(@{{ u.username }}){% endif %}</a>
+        {% else %}<span class="muted">noma'lum</span>{% endif %}
+      </td>
+      <td>
+        <form method="post" action="/logs/{{ log.id }}/delete" onsubmit="return confirm('Bu log yozuvi o\'chirilsinmi?');">
+          <input type="hidden" name="csrf_token" value="{{ admin.csrf_token }}">
+          <button type="submit" class="btn btn-danger btn-sm">O'chirish</button>
+        </form>
+      </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="4" class="muted">Hech narsa topilmadi.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<div class="pagination">
+  {% if has_prev %}<a class="btn btn-ghost" href="/logs?telegram_id={{ telegram_id }}&page={{ page - 1 }}">&larr; Oldingi</a>{% endif %}
+  <span class="muted">{{ page }}-sahifa</span>
+  {% if has_next %}<a class="btn btn-ghost" href="/logs?telegram_id={{ telegram_id }}&page={{ page + 1 }}">Keyingi &rarr;</a>{% endif %}
+</div>
+
+<section class="panel">
+  <h2>Ommaviy tozalash</h2>
+  <div class="two-col">
+    <form method="post" action="/logs/delete-bulk" class="edit-form"
+          onsubmit="return confirm('Ushbu foydalanuvchining barcha loglari o\'chirilsinmi?');">
+      <input type="hidden" name="csrf_token" value="{{ admin.csrf_token }}">
+      <input type="hidden" name="mode" value="by_user">
+      <label>Telegram ID bo'yicha o'chirish
+        <input type="text" name="telegram_id" placeholder="masalan: 123456789" required>
+      </label>
+      <button type="submit" class="btn btn-danger">Shu userning loglarini o'chirish</button>
+    </form>
+
+    <form method="post" action="/logs/delete-bulk" class="edit-form"
+          onsubmit="return confirm('Ko\'rsatilgan kundan eski barcha loglar o\'chirilsinmi?');">
+      <input type="hidden" name="csrf_token" value="{{ admin.csrf_token }}">
+      <input type="hidden" name="mode" value="older_than_days">
+      <label>Necha kundan eski loglarni o'chirish
+        <input type="number" name="older_than_days" min="1" placeholder="masalan: 90" required>
+      </label>
+      <button type="submit" class="btn btn-danger">Eskilarini tozalash</button>
+    </form>
+  </div>
+</section>
+{% endblock %}

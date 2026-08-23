@@ -29,3 +29,8 @@ htmlcov/
 # Logs
 *.log
 logs/
+
+# admin_panel-specific
+admin_panel/*.db
+admin_panel/*.sqlite3
+admin_panel/static/uploads/

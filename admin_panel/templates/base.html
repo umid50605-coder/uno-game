@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{% block title %}UNO Admin{% endblock %}</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+{% if admin %}
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="brand" href="/">UNO &middot; Admin</a>
+    <nav>
+      <a href="/">Statistika</a>
+      <a href="/users">Foydalanuvchilar</a>
+      <a href="/rooms">Xonalar</a>
+      <a href="/logs">Loglar</a>
+    </nav>
+    <form action="/logout" method="post" class="logout-form">
+      <span class="admin-name">{{ admin.username }}</span>
+      <button type="submit" class="btn btn-ghost">Chiqish</button>
+    </form>
+  </div>
+</header>
+{% endif %}
+<main class="container">
+{% if error %}
+  <div class="alert alert-error">{{ error }}</div>
+{% endif %}
+{% block content %}{% endblock %}
+</main>
+</body>
+</html>

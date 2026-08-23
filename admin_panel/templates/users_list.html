@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}Foydalanuvchilar — UNO Admin{% endblock %}
+{% block content %}
+<h1>Foydalanuvchilar <span class="muted small">({{ total }})</span></h1>
+
+<form method="get" action="/users" class="search-form">
+  <input type="text" name="q" value="{{ q }}" placeholder="Ism, username yoki telegram_id bo'yicha qidirish...">
+  <button type="submit" class="btn btn-primary">Qidirish</button>
+  {% if q %}<a href="/users" class="btn btn-ghost">Tozalash</a>{% endif %}
+</form>
+
+<table class="data-table">
+  <thead>
+    <tr>
+      <th>ID</th>
+      <th>Telegram ID</th>
+      <th>Ism</th>
+      <th>Username</th>
+      <th>Reyting</th>
+      <th>O'yinlar</th>
+      <th>Holat</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for u in users %}
+    <tr>
+      <td class="num">{{ u.id }}</td>
+      <td class="mono">{{ u.telegram_id }}</td>
+      <td><a href="/users/{{ u.id }}">{{ u.first_name }} {{ u.last_name or '' }}</a></td>
+      <td>{% if u.username %}@{{ u.username }}{% else %}<span class="muted">—</span>{% endif %}</td>
+      <td class="num">{{ u.rating }}</td>
+      <td class="num">{{ u.games_played }}</td>
+      <td>
+        {% if u.is_blacklisted %}<span class="badge badge-danger">Blacklist</span>{% endif %}
+        {% if u.locked_until and u.locked_until > now %}<span class="badge badge-warn">Lock</span>{% endif %}
+        {% if not u.is_blacklisted and not (u.locked_until and u.locked_until > now) %}<span class="badge badge-ok">Faol</span>{% endif %}
+      </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="7" class="muted">Hech narsa topilmadi.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<div class="pagination">
+  {% if has_prev %}<a class="btn btn-ghost" href="/users?q={{ q }}&page={{ page - 1 }}">&larr; Oldingi</a>{% endif %}
+  <span class="muted">{{ page }}-sahifa</span>
+  {% if has_next %}<a class="btn btn-ghost" href="/users?q={{ q }}&page={{ page + 1 }}">Keyingi &rarr;</a>{% endif %}
+</div>
+{% endblock %}
