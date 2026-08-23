@@ -32,10 +32,10 @@ if _backend_path not in sys.path:
     sys.path.insert(0, _backend_path)
 
 # noqa: E402 — sys.path sozlangandan keyingina import qilish shart
-from backend.core.database import SessionLocal, engine  # noqa: E402
-from backend.models.disconnect_log import DisconnectLog  # noqa: E402
-from backend.models.room import Room, RoomPlayer, RoomStatus, generate_room_code  # noqa: E402
-from backend.models.user import User  # noqa: E402
+from core.database import SessionLocal, engine  # noqa: E402
+from models.disconnect_log import DisconnectLog  # noqa: E402
+from models.room import Room, RoomPlayer, RoomStatus, generate_room_code  # noqa: E402
+from models.user import User 
 
 __all__ = [
     "engine",
