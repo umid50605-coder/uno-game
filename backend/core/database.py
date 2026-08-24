@@ -1,47 +1,38 @@
 """
-backend/core/database.py 
+backend/core/database.py
 core/database.py — SQLAlchemy engine, session factory, va Base klassi.
 
-Stage 14 uchun tekshirildi: disconnect_watcher() va _room_cleanup_loop()
-ikkalasi ham har 5 soniyada mustaqil ravishda DB'ga ulanadigan fon
-vazifalari — ular + oddiy so'rovlar orasidagi bir vaqtdagi yozishlarni
-mavjud WAL rejimi va busy_timeout allaqachon yetarli darajada qamrab oladi,
-shuning uchun bu qism o'zgarishsiz qoldi.
+O'ZGARISH: SQLite'dan Supabase PostgreSQL'ga o'tildi. Endi DATABASE_URL
+har doim .env fayl (yoki hosting platformasidagi environment variable)
+orqali o'qiladi — hardcoded local fayl yo'q, shuning uchun server qayerda
+va qanday ishga tushirilishidan qat'iy nazar bitta doimiy tashqi bazaga
+ulanadi.
 
-Yagona tuzatish: DB_PATH hisoblab chiqarilgan-u, lekin DATABASE_URL undan
-foydalanmay, alohida nisbiy yo'l ("./uno.db") bilan yozilgan edi. Bu xavfli —
-serverni backend/ papkasidan boshqa joydan ishga tushirsangiz, "./uno.db"
-boshqa faylga ishora qiladi va DB_PATH bilan mos kelmay qoladi. Endi
-DATABASE_URL DB_PATH'dan olinadi — qayerdan ishga tushirishingizdan qat'iy
-nazar, doim aynan shu bitta faylga ishora qiladi.
+SQLite-specific narsalar (WAL pragma, check_same_thread, timeout) olib
+tashlandi — PostgreSQL bunga muhtoj emas, chunki u haqiqiy concurrent
+yozishni serverning o'zida boshqaradi.
 """
 
-from pathlib import Path
-
-from sqlalchemy import create_engine, event
+import os
 from collections.abc import Generator
+
+from sqlalchemy import create_engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
-DB_PATH = Path(__file__).resolve().parent.parent / "uno.db"
-DATABASE_URL = f"sqlite:///{DB_PATH}"
+DATABASE_URL = os.getenv("DATABASE_URL")
 
-engine = create_engine(
-    DATABASE_URL, connect_args={"check_same_thread": False, "timeout": 15}
-)
+if not DATABASE_URL:
+    raise RuntimeError(
+        "DATABASE_URL topilmadi. .env fayliga (yoki hosting platformasi "
+        "environment variables bo'limiga) DATABASE_URL=postgresql://... "
+        "qatorini qo'shing."
+    )
 
-
-@event.listens_for(engine, "connect")
-def _set_sqlite_pragmas(dbapi_connection, connection_record):
-    """SQLite: bir nechta o'yinchi bir vaqtda yozganda (masalan ikkalasi
-    ham "Tayyorman" tugmasini bossa, yoki disconnect_watcher/_room_cleanup_loop
-    fon vazifalari oddiy so'rovlar bilan bir vaqtga to'g'ri kelsa) 'database
-    is locked' xatosi chiqmasligi uchun WAL rejimini yoqadi va yozish uchun
-    kutish vaqtini uzaytiradi."""
-    cursor = dbapi_connection.cursor()
-    cursor.execute("PRAGMA journal_mode=WAL")
-    cursor.execute("PRAGMA busy_timeout=15000")
-    cursor.close()
-
+# pool_pre_ping=True: uzoq vaqt ishlatilmagan (masalan Supabase vaqtincha
+# uxlab qolgan/tarmoq uzilgan) ulanishlarni avtomatik yangilaydi — aks
+# holda "server closed the connection unexpectedly" kabi xatolar chiqishi
+# mumkin.
+engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
