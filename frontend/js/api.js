@@ -67,8 +67,5 @@ export const api = {
     body: JSON.stringify({ ready }),
   }),
   cancelTournament: (tournamentId) => request(`/tournaments/${tournamentId}/cancel`, { method: "POST" }),
-    getBracket: (tournamentId) => request(`/tournaments/${tournamentId}/bracket`),
-
-  // ---------------- Config ----------------
-  getConfig: () => request("/config"),
+  getBracket: (tournamentId) => request(`/tournaments/${tournamentId}/bracket`),
 };

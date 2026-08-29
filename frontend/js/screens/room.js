@@ -40,7 +40,7 @@ export function initRoom(roomId) {
     }
   };
 
-  el.waitBtn.onclick = async () => {
+el.waitBtn.onclick = async () => {
   try {
     const room = await api.extendWait(roomId);
     renderRoom(room);

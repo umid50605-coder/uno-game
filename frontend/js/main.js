@@ -45,17 +45,14 @@ export function showScreen(name) {
 }
 
 function _parseStartParam() {
-  // Tournament deep link endi query-string orqali keladi:
-  // <WEBAPP_URL>?tournament=<id>&invite_token=<token>
-  // (bot/keyboards.py'dagi tournament_keyboard() shu formatda URL quradi).
+  // Telegram Mini App deep link: t.me/<bot>?startapp=trny_<id>_<token>
+  // yoki oddiy start param. Bot/config aniqlangach bu qism to'liqlanadi.
   try {
-    const params = new URLSearchParams(window.location.search);
-    const tournamentIdRaw = params.get("tournament");
-    const inviteToken = params.get("invite_token");
-    if (!tournamentIdRaw || !inviteToken) return null;
-    const tournamentId = Number(tournamentIdRaw);
-    if (!Number.isFinite(tournamentId)) return null;
-    return { tournamentId, inviteToken };
+    const startParam = tg?.initDataUnsafe?.start_param;
+    if (!startParam || !startParam.startsWith("trny_")) return null;
+    const [, tournamentId, inviteToken] = startParam.split("_");
+    if (!tournamentId || !inviteToken) return null;
+    return { tournamentId: Number(tournamentId), inviteToken };
   } catch (_) {
     return null;
   }

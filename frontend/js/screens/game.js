@@ -28,7 +28,6 @@ export function initGame() {
   });
   wsClient.on("forfeited", (data) => {
     stopDisconnectCountdown();
-    wsClient.close(); // MUHIM: qayta ulanish tsiklining oldini olish uchun avval yopamiz
     showForfeitedNotice(data.message);
   });
   wsClient.on("error", (data) => showError(data.message));
@@ -270,6 +269,7 @@ function unoCaughtText(data) {
   return `${getPlayerName(data.catcher_id)}, ${getPlayerName(data.target_id)}ni tutdi (+${data.penalty})`;
 }
 
+// Tournament bo'lsa bracket/live-view'ga, aks holda oddiy lobbyga qaytaradi.
 function _returnAfterGame() {
   setState({ roomId: null });
   const { tournamentId } = getState();
@@ -293,6 +293,9 @@ function showGameOver(winnerId) {
   }, GAME_OVER_REDIRECT_DELAY_MS);
 }
 
+// Server "forfeited" xabari yuborganda (masalan, forfeit qilingandan keyin
+// qayta ulanishga urinilganda) chaqiriladi. Bu holatni "_disconnected"dan
+// FARQLASH MUHIM — aks holda o'yinchi cheksiz "qayta ulanmoqda" holatida qoladi.
 function showForfeitedNotice(message) {
   const el = document.getElementById("game-over");
   el.classList.remove("hidden");

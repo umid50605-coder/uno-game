@@ -46,9 +46,7 @@ async def send_initial_state(
         False -> WebSocket yopildi (yoki ulanish allaqachon o'lik).
     """
 
-    initial_state = game.get_state(
-        telegram_id,
-    )
+    initial_state = game.get_state(telegram_id)
 
     # O'yinchi allaqachon forfeit bo'lgan
     if initial_state.get("type") == "not_in_game":
@@ -76,20 +74,14 @@ async def send_initial_state(
         return False
 
     # Reconnect
-    was_reconnected = game.is_disconnected(
-        telegram_id,
-    )
+    was_reconnected = game.is_disconnected(telegram_id)
 
     if was_reconnected:
-        game.mark_reconnected(
-            telegram_id,
-        )
+        game.mark_reconnected(telegram_id)
 
     # Initial state yuborish
     try:
-        await websocket.send_json(
-            initial_state,
-        )
+        await websocket.send_json(initial_state)
     except Exception:
         logger.exception(
             "Initial state yuborilmadi room=%s player=%s",
@@ -122,10 +114,7 @@ async def send_initial_state(
             )
 
         try:
-            await manager.broadcast_state(
-                room_id,
-                game,
-            )
+            await manager.broadcast_state(room_id, game)
         except Exception:
             logger.exception(
                 "broadcast_state qilinmadi room=%s player=%s",

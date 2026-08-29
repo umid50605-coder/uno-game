@@ -14,7 +14,7 @@ from aiogram.types import Update
 
 from bot.handlers.start import router as start_router
 
-from api.routes import auth, config as config_route, game, rooms, users, tournament
+from api.routes import auth, game, rooms, users, tournament
 from api.routes.websocket.disconnect_watcher import disconnect_watcher
 from api.routes.websocket.router import router as websocket_router
 
@@ -93,7 +93,6 @@ app.include_router(users.router)
 app.include_router(rooms.router)
 app.include_router(websocket_router)
 app.include_router(tournament.router)
-app.include_router(config_route.router)
 
 
 # ==========================================================
