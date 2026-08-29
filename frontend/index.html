@@ -15,12 +15,55 @@
   <div id="leaderboard" class="leaderboard"></div>
 
   <button id="create-room-btn">+ Yangi xona</button>
+  <button id="tournament-btn" class="lobby-btn">🏆 Tournament</button>
   <div style="display:flex; gap:8px; margin: 8px 0;">
     <input id="search-input" type="text" placeholder="Xona kodini kiriting" style="flex:1; padding:8px; border-radius:6px; border:none;" />
     <button id="search-btn">Qidirish</button>
   </div>
   <button id="random-btn">🎲 Tasodifiy xona</button>
   <div id="room-list"></div>
+</div>
+
+<!-- Tournament kirish/lobby -->
+<div id="tournament-lobby-screen" class="screen hidden">
+  <div id="tournament-entry-view">
+    <h2>🏆 Tournament</h2>
+    <button id="tournament-create-btn" class="lobby-btn">Turnir yaratish</button>
+    <div class="tournament-divider">yoki</div>
+    <input id="tournament-join-input" type="text" placeholder="Taklif havolasi yoki ID_TOKEN" />
+    <button id="tournament-join-btn" class="lobby-btn">Qo'shilish</button>
+    <button id="tournament-back-btn" class="lobby-btn secondary">← Orqaga</button>
+  </div>
+
+  <div id="tournament-lobby-view" class="hidden">
+    <p id="tournament-status" class="tournament-status"></p>
+    <p id="tournament-countdown" class="tournament-countdown"></p>
+
+    <div id="tournament-invite-link" class="hidden">
+      <button id="tournament-copy-link-btn" class="lobby-btn">📋 Havolani nusxalash</button>
+    </div>
+
+    <div id="tournament-player-list" class="tournament-player-list"></div>
+
+    <div class="tournament-lobby-actions">
+      <button id="tournament-ready-btn" class="lobby-btn">Tayyor</button>
+      <button id="tournament-leave-btn" class="lobby-btn secondary">Chiqish</button>
+    </div>
+  </div>
+
+  <div id="tournament-lobby-error" class="lobby-error hidden"></div>
+</div>
+
+<!-- Tournament bracket / live-view -->
+<div id="tournament-screen" class="screen hidden">
+  <h2 id="tournament-view-status" class="tournament-status"></h2>
+  <button id="tournament-cancel-btn" class="lobby-btn danger">Turnirni bekor qilish</button>
+
+  <div id="tournament-rounds" class="tournament-rounds"></div>
+
+  <div id="tournament-final-banner" class="tournament-final-banner hidden"></div>
+
+  <div id="tournament-view-error" class="lobby-error hidden"></div>
 </div>
 
 <!-- Tanlov ekrani (public / security) -->

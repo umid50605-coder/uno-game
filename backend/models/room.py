@@ -19,6 +19,11 @@ class RoomStatus(str, enum.Enum):
     FINISHED = "finished"
 
 
+class RoomType(str, enum.Enum):
+    NORMAL = "normal"
+    TOURNAMENT = "tournament"
+
+
 def generate_room_code(length: int = 6) -> str:
     alphabet = string.ascii_uppercase + string.digits
     return "".join(random.choice(alphabet) for _ in range(length))
@@ -46,6 +51,12 @@ class Room(Base):
     is_public: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
     join_code: Mapped[str | None] = mapped_column(String(16), nullable=True)
+
+    # YANGI: normal xonalarni tournament xonalaridan ajratish uchun.
+    # Default NORMAL — mavjud qatorlar migratsiyadan keyin ham to'g'ri holatda qoladi.
+    room_type: Mapped[RoomType] = mapped_column(
+        Enum(RoomType), default=RoomType.NORMAL, nullable=False
+    )
 
     players: Mapped[list["RoomPlayer"]] = relationship(
         back_populates="room", cascade="all, delete-orphan"

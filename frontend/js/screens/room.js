@@ -41,10 +41,15 @@ export function initRoom(roomId) {
   };
 
   el.waitBtn.onclick = async () => {
+  try {
     const room = await api.extendWait(roomId);
     renderRoom(room);
     el.status.textContent = "Kutish muddati +60 soniyaga uzaytirildi.";
-  };
+  } catch (err) {
+    console.error("extendWait xatosi:", err);
+    el.status.textContent = "Xato: qayta urinib ko'ring.";
+  }
+};
 
   el.backBtn.onclick = async () => {
     stopRoom();
@@ -73,13 +78,26 @@ async function refreshRoom(roomId) {
     consecutiveError = 0;
     renderRoom(room);
     if (room.status === "playing") goToGame();
-    else if (room.status === "finished") showScreen("lobby");   // shu yerda tuzatildi
+    else if (room.status === "finished") _returnAfterMatch();
   } catch (err) {
     console.error("refreshRoom xatosi:", err);
     consecutiveError += 1;
     if (consecutiveError >= 3) {
-      showScreen("lobby");   // va bu yerda ham
+      _returnAfterMatch();
     }
+  }
+}
+
+function _returnAfterMatch() {
+  stopRoom();
+  const { tournamentId } = getState();
+  if (tournamentId) {
+    // Tournament match tugadi — bracket/live-view'ga qaytamiz,
+    // oddiy lobbyga emas. G'olib ham, eliminated o'yinchi ham
+    // shu yerdan navbatdagi round yoki final natijasini kuzatadi.
+    showScreen("tournament");
+  } else {
+    showScreen("lobby");
   }
 }
 

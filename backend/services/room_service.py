@@ -7,7 +7,7 @@ from datetime import datetime, timezone, timedelta
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session, joinedload
 
-from models.room import Room, RoomPlayer, RoomStatus, generate_room_code
+from models.room import Room, RoomPlayer, RoomStatus, RoomType, generate_room_code
 from models.schemas import LeaveRoomResponse, RoomOut, RoomPlayerOut
 from models.user import User
 from services import abuse_service
@@ -29,7 +29,6 @@ def _to_room_out(room: Room, host_telegram_id: int | None = None) -> RoomOut:
         )
         for p in room.players
     ]
-    # join_code faqat hostga ko'rinadi
     show_code = None
     if host_telegram_id is not None and room.host.telegram_id == host_telegram_id:
         show_code = room.join_code
@@ -43,6 +42,7 @@ def _to_room_out(room: Room, host_telegram_id: int | None = None) -> RoomOut:
         is_public=room.is_public,
         join_code=show_code,
     )
+
 
 def _get_user_or_404(db: Session, telegram_id: int) -> User:
     user = db.query(User).filter(User.telegram_id == telegram_id).first()
@@ -61,6 +61,7 @@ def _get_room_or_404(db: Session, room_id: int) -> Room:
     if room is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Xona topilmadi")
     return room
+
 
 def _leave_current_waiting_room(db: Session, user: User):
     player = (
@@ -103,6 +104,7 @@ def _leave_current_waiting_room(db: Session, user: User):
 
     db.flush()
 
+
 def _lock_message(lock: dict) -> str:
     if lock.get("blacklisted"):
         return "Ko'p marta ataylab uzilganingiz aniqlandi — hozircha o'yin o'ynay olmaysiz."
@@ -116,15 +118,16 @@ def _lock_message(lock: dict) -> str:
 
 
 def create_room(db: Session, host_telegram_id: int, is_public: bool = True, join_code: str | None = None) -> RoomOut:
+    """Oddiy (normal) xona yaratish. Tournament matchlar buni ISHLATMAYDI —
+    ular uchun create_tournament_match_room() bor (pastda)."""
     lock = abuse_service.check_lock(db, host_telegram_id)
     if lock["locked"]:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=_lock_message(lock))
 
     host = _get_user_or_404(db, host_telegram_id)
-    
+
     _leave_current_waiting_room(db, host)
 
-    # Security xona uchun kod majburiy
     if not is_public and not join_code:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Security xona uchun kod kerak")
 
@@ -137,6 +140,7 @@ def create_room(db: Session, host_telegram_id: int, is_public: bool = True, join
         host_id=host.id,
         is_public=is_public,
         join_code=join_code if not is_public and join_code else None,
+        room_type=RoomType.NORMAL,
     )
     db.add(room)
     db.flush()
@@ -162,10 +166,15 @@ def get_room_player_ids(db: Session, room_id: int) -> list[int]:
 
 
 def list_open_rooms(db: Session) -> list[RoomOut]:
+    """Faqat NORMAL xonalar — tournament xonalari bu yerda hech qachon chiqmaydi."""
     rooms = (
         db.query(Room)
         .options(joinedload(Room.players).joinedload(RoomPlayer.user))
-        .filter(Room.status == RoomStatus.WAITING, Room.is_public == True)
+        .filter(
+            Room.status == RoomStatus.WAITING,
+            Room.is_public == True,
+            Room.room_type == RoomType.NORMAL,
+        )
         .order_by(Room.created_at.desc())
         .all()
     )
@@ -173,22 +182,31 @@ def list_open_rooms(db: Session) -> list[RoomOut]:
 
 
 def search_rooms_by_code(db: Session, code: str) -> list[RoomOut]:
-    """Kodga mos xonalarni qaytaradi (security va public)."""
+    """Kodga mos xonalarni qaytaradi (security va public) — faqat NORMAL."""
     rooms = (
         db.query(Room)
         .options(joinedload(Room.players).joinedload(RoomPlayer.user))
-        .filter(Room.code == code, Room.status == RoomStatus.WAITING)
+        .filter(
+            Room.code == code,
+            Room.status == RoomStatus.WAITING,
+            Room.room_type == RoomType.NORMAL,
+        )
         .all()
     )
     return [_to_room_out(room) for room in rooms]
 
 
 def get_random_public_room(db: Session) -> RoomOut:
+    """Faqat NORMAL public xonalar orasidan tasodifiy tanlaydi."""
     import random
     rooms = (
         db.query(Room)
         .options(joinedload(Room.players).joinedload(RoomPlayer.user))
-        .filter(Room.status == RoomStatus.WAITING, Room.is_public == True)
+        .filter(
+            Room.status == RoomStatus.WAITING,
+            Room.is_public == True,
+            Room.room_type == RoomType.NORMAL,
+        )
         .all()
     )
     if not rooms:
@@ -198,6 +216,7 @@ def get_random_public_room(db: Session) -> RoomOut:
 
 
 def join_room(db: Session, room_id: int, telegram_id: int, join_code: str | None = None) -> RoomOut:
+    """Oddiy xonaga qo'shilish. Tournament matchlar buni ISHLATMAYDI."""
     lock = abuse_service.check_lock(db, telegram_id)
     if lock["locked"]:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=_lock_message(lock))
@@ -207,7 +226,6 @@ def join_room(db: Session, room_id: int, telegram_id: int, join_code: str | None
     if room.status != RoomStatus.WAITING:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Xona endi qo'shilish uchun ochiq emas")
 
-    # Security xonada kodni tekshirish
     if not room.is_public:
         if not join_code or join_code != room.join_code:
             raise HTTPException(
@@ -229,9 +247,6 @@ def join_room(db: Session, room_id: int, telegram_id: int, join_code: str | None
     room = _get_room_or_404(db, room_id)
     return _to_room_out(room, host_telegram_id=telegram_id)
 
-
-# set_ready, extend_wait, leave_room, cleanup_stale_rooms, finish_room — o'zgarishsiz qoldi (yuqoridagi kodni saqlab qolamiz)
-# ... (oldingi kodni qoldiramiz, faqat _to_room_out() endi host_telegram_id ni oladi)
 
 def set_ready(db: Session, room_id: int, telegram_id: int, ready: bool) -> RoomOut:
     room = _get_room_or_404(db, room_id)
@@ -264,6 +279,7 @@ def set_ready(db: Session, room_id: int, telegram_id: int, ready: bool) -> RoomO
 
     return _to_room_out(room)
 
+
 def extend_wait(db: Session, room_id: int, telegram_id: int) -> RoomOut:
     room = _get_room_or_404(db, room_id)
 
@@ -284,6 +300,7 @@ def extend_wait(db: Session, room_id: int, telegram_id: int) -> RoomOut:
     room = _get_room_or_404(db, room_id)
     logger.info("Xona %s kutish muddati uzaytirildi.", room.code)
     return _to_room_out(room)
+
 
 def leave_room(db: Session, room_id: int, telegram_id: int) -> LeaveRoomResponse:
     room = _get_room_or_404(db, room_id)
@@ -308,7 +325,7 @@ def leave_room(db: Session, room_id: int, telegram_id: int) -> LeaveRoomResponse
     room = _get_room_or_404(db, room_id)
 
     if len(room.players) == 0:
-        room_code = room.code          # o'chirishdan OLDIN saqlab olamiz
+        room_code = room.code
         db.delete(room)
         db.commit()
         logger.info("Xona %s bekor qilindi (hamma chiqib ketdi).", room_code)
@@ -323,13 +340,21 @@ def leave_room(db: Session, room_id: int, telegram_id: int) -> LeaveRoomResponse
 
     return LeaveRoomResponse(deleted=False, room=_to_room_out(room, host_telegram_id=telegram_id))
 
+
 def cleanup_stale_rooms(db: Session) -> None:
+    """Faqat NORMAL xonalarga tegishli — tournament xonalari wait_deadline'ga
+    umuman ega bo'lmaydi (WAITING holatidan o'tmaydi), shuning uchun bu
+    funksiya ularga hech qachon tegmaydi, lekin aniqlik uchun filtr qo'shildi."""
     now = datetime.now(timezone.utc)
 
     stale_rooms = (
         db.query(Room)
         .options(joinedload(Room.players))
-        .filter(Room.status == RoomStatus.WAITING, Room.wait_deadline < now)
+        .filter(
+            Room.status == RoomStatus.WAITING,
+            Room.wait_deadline < now,
+            Room.room_type == RoomType.NORMAL,
+        )
         .all()
     )
 
@@ -356,14 +381,106 @@ def cleanup_stale_rooms(db: Session) -> None:
     if stale_rooms:
         db.commit()
 
+
 def finish_room(db: Session, room_id: int) -> None:
-    """O'yin tugagach xona statusini FINISHED qiladi."""
+    """O'yin tugagach xona statusini FINISHED qiladi. Normal va tournament
+    xonalar uchun bir xil — status boshqarish umumiy."""
     room = db.query(Room).filter(Room.id == room_id).first()
 
-    if room is not None and room.status !=RoomStatus.FINISHED:
+    if room is not None and room.status != RoomStatus.FINISHED:
         room.status = RoomStatus.FINISHED
+        logger.info("Xona %s yakunlandi (o'yin tugadi).", room.code)
 
-        logger.info(
-            "Xona %s yakunlandi (o'yin tugadi).",
-            room.code,
+
+# ==========================================================
+# TOURNAMENT — maxsus xona yaratish yo'li
+# ==========================================================
+
+def create_tournament_match_room(
+    db: Session,
+    player_ids: list[int],
+) -> tuple[Room, list[int]]:
+    """
+    Tournament match uchun maxsus xona yaratadi.
+
+    create_room()/join_room() dan FARQI:
+      - join_code/is_public tekshiruvi umuman yo'q (bu xonaga faqat
+        tournament_service orqali, allaqachon tekshirilgan o'yinchilar
+        qo'shiladi — normal xonaning "kod bilan kirish" mantig'i bu yerga
+        aloqasi yo'q).
+      - Barcha o'yinchilar BITTA tranzaksiyada qo'shiladi (join_room'ni
+        tsiklda chaqirib, xatoni yutib yuborish yo'q).
+      - Xona to'g'ridan-to'g'ri PLAYING holatida yaratiladi (tournament
+        o'z ready-check bosqichini allaqachon bajargan, soxta "hammani
+        ready qilib qo'yish" kerak emas).
+      - Bloklangan (abuse_service) o'yinchilar xonaga QO'SHILMAYDI, lekin
+        xato tashlab butun matchni yiqitmaydi — ular ro'yxatda alohida
+        qaytariladi, chaqiruvchi (tournament_service) ularni shu tur uchun
+        eliminatsiya qiladi.
+
+    Returns:
+        (room, locked_out_telegram_ids) — room haqiqiy Room obyekti,
+        locked_out — xonaga bloklanganligi sababli qo'shilmagan o'yinchilar.
+    """
+    if len(player_ids) < 2:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Tournament match uchun kamida 2 o'yinchi kerak",
         )
+
+    users_by_tid: dict[int, User] = {
+        u.telegram_id: u
+        for u in db.query(User).filter(User.telegram_id.in_(player_ids)).all()
+    }
+
+    missing = [tid for tid in player_ids if tid not in users_by_tid]
+    if missing:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Foydalanuvchilar topilmadi: {missing}",
+        )
+
+    locked_out: list[int] = []
+    admitted_ids: list[int] = []
+    for tid in player_ids:
+        lock = abuse_service.check_lock(db, tid)
+        if lock["locked"]:
+            locked_out.append(tid)
+        else:
+            admitted_ids.append(tid)
+
+    if len(admitted_ids) < 2:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Bloklanmagan yetarli o'yinchi yo'q, match yaratib bo'lmadi",
+        )
+
+    code = generate_room_code()
+    while db.query(Room).filter(Room.code == code).first() is not None:
+        code = generate_room_code()
+
+    host_user = users_by_tid[admitted_ids[0]]
+
+    room = Room(
+        code=code,
+        host_id=host_user.id,
+        is_public=False,
+        join_code=None,
+        room_type=RoomType.TOURNAMENT,
+        status=RoomStatus.PLAYING,
+        max_players=len(admitted_ids),
+    )
+    db.add(room)
+    db.flush()
+
+    for tid in admitted_ids:
+        db.add(RoomPlayer(room_id=room.id, user_id=users_by_tid[tid].id, is_ready=True))
+
+    db.commit()
+    room = _get_room_or_404(db, room.id)
+
+    logger.info(
+        "Tournament match xonasi yaratildi: %s (players=%s, locked_out=%s)",
+        room.code, admitted_ids, locked_out,
+    )
+    return room, locked_out

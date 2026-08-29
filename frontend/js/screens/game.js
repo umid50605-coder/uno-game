@@ -1,10 +1,8 @@
 // screens/game.js — o'yin ekrani. Stage 12 (kartalar/UNO/stacking) + Stage 14
-// (uzilish/qayta ulanish/forfeit holati).
+// (uzilish/qayta ulanish/forfeit holati) + Tournament integratsiyasi.
 import { wsClient } from "../ws-client.js";
 import { getState, setState } from "../state.js";
 import { showScreen } from "../main.js";
-
-console.log(getState());
 
 const RING_HEX = { red: "#e24b4a", yellow: "#f1c40f", green: "#2ecc71", blue: "#3498db" };
 const WILD_RING = "#f2f2f2";
@@ -21,15 +19,17 @@ let disconnectCountdownTimer = null;
 export function initGame() {
   const { roomId, token } = getState();
 
-  console.log("roomId =", roomId);
-  console.log("token =", token);
-
   wsClient.connect(roomId, token);
 
   wsClient.on("game_state", renderState);
   wsClient.on("game_over", (data) => {
     stopDisconnectCountdown();
     showGameOver(data.winner);
+  });
+  wsClient.on("forfeited", (data) => {
+    stopDisconnectCountdown();
+    wsClient.close(); // MUHIM: qayta ulanish tsiklining oldini olish uchun avval yopamiz
+    showForfeitedNotice(data.message);
   });
   wsClient.on("error", (data) => showError(data.message));
   wsClient.on("uno_called", (data) => showToast(unoCalledText(data.player_id)));
@@ -46,7 +46,7 @@ export function initGame() {
     showToast(`${getPlayerName(data.player_id)} qaytdi`);
     stopDisconnectCountdown();
   });
-    wsClient.on("player_forfeited", (data) => {
+  wsClient.on("player_forfeited", (data) => {
     showToast(`${getPlayerName(data.player_id)} o'yindan chiqarildi`);
     stopDisconnectCountdown();
   });
@@ -270,6 +270,16 @@ function unoCaughtText(data) {
   return `${getPlayerName(data.catcher_id)}, ${getPlayerName(data.target_id)}ni tutdi (+${data.penalty})`;
 }
 
+function _returnAfterGame() {
+  setState({ roomId: null });
+  const { tournamentId } = getState();
+  if (tournamentId) {
+    showScreen("tournament");
+  } else {
+    showScreen("lobby");
+  }
+}
+
 function showGameOver(winnerId) {
   const { playerId } = getState();
   const el = document.getElementById("game-over");
@@ -279,9 +289,20 @@ function showGameOver(winnerId) {
   if (gameOverTimer) clearTimeout(gameOverTimer);
   gameOverTimer = setTimeout(() => {
     gameOverTimer = null;
-    setState({ roomId: null });
-    showScreen("lobby");
+    _returnAfterGame();
   }, GAME_OVER_REDIRECT_DELAY_MS);
+}
+
+function showForfeitedNotice(message) {
+  const el = document.getElementById("game-over");
+  el.classList.remove("hidden");
+  el.textContent = message || "Siz ushbu o'yindan chiqarilgansiz.";
+
+  if (gameOverTimer) clearTimeout(gameOverTimer);
+  gameOverTimer = setTimeout(() => {
+    gameOverTimer = null;
+    _returnAfterGame();
+  }, FORFEITED_REDIRECT_DELAY_MS);
 }
 
 function showError(message) {

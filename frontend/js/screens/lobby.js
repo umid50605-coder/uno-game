@@ -1,4 +1,4 @@
-// screens/lobby.js — yangilangan
+// screens/lobby.js — yangilangan (Tournament tugmasi qo'shildi)
 import { api } from "../api.js";
 import { setState } from "../state.js";
 import { showScreen } from "../main.js";
@@ -6,6 +6,7 @@ import { showScreen } from "../main.js";
 const el = {
   list: null,
   createBtn: null,
+  tournamentBtn: null,   // YANGI
   leaderboard: null,
   error: null,
   searchInput: null,
@@ -18,6 +19,7 @@ let refreshInterval = null;
 export function initLobby() {
   el.list = document.getElementById("room-list");
   el.createBtn = document.getElementById("create-room-btn");
+  el.tournamentBtn = document.getElementById("tournament-btn");   // YANGI
   el.leaderboard = document.getElementById("leaderboard");
   el.searchInput = document.getElementById("search-input");
   el.searchBtn = document.getElementById("search-btn");
@@ -29,6 +31,9 @@ export function initLobby() {
   el.leaderboard.parentNode.insertBefore(el.error, el.leaderboard);
 
   el.createBtn.onclick = () => showScreen("room-choice");
+
+  // YANGI: Tournament tugmasi bosilganda — turnir yaratish/qo'shilish ekrani.
+  el.tournamentBtn.onclick = () => showScreen("tournament-lobby");
 
   el.searchBtn.onclick = async () => {
     const code = el.searchInput.value.trim();
@@ -190,6 +195,6 @@ async function refreshRooms() {
 }
 
 async function enterRoom(roomId) {
-    setState({ roomId });
-    showScreen("room");
+  setState({ roomId });
+  showScreen("room");
 }

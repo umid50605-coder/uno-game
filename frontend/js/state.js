@@ -3,7 +3,12 @@ const state = {
   token: null,
   playerId: null,
   roomId: null,
-  screen: "lobby", // "lobby" | "game"
+  screen: "lobby", // "lobby" | "game" | "tournament" | ...
+
+  // ---------------- Tournament ----------------
+  tournamentId: null,
+  tournament: null,      // backend TournamentOut javobi (to'liq holat)
+  inviteToken: null,     // faqat CREATE javobida keladi, faqat creator uchun saqlanadi
 };
 
 const listeners = new Set();

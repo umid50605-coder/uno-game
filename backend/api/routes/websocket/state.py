@@ -1,10 +1,10 @@
 """
-backend/api/routes/websocket/state.py 
+backend/api/routes/websocket/state.py
 WebSocket global runtime state.
 
 Vazifalari:
-
-- ConnectionManager instance
+- ConnectionManager instance (rooms uchun HAM, tournamentlar uchun HAM —
+  bitta instance, chunki ConnectionManager ikkalasini ham o'zida saqlaydi)
 - GameManager instance
 - Game finish lock
 """

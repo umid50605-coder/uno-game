@@ -10,13 +10,16 @@ Vazifalari:
 - Room holatini yakunlash
 - game_over event yuborish
 - Active GameEngine ni xotiradan o'chirish
+- Agar xona tournamentga tegishli bo'lsa, tournament_service'ga signal berish
 """
 
 import logging
 
 from sqlalchemy.orm import Session
 
+from models.room import Room, RoomType
 from services.game_engine import GameEngine
+from services import tournament_service
 from services.rating_service import apply_game_result
 from services.room_service import finish_room
 
@@ -27,6 +30,27 @@ from .state import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _notify_tournament_if_needed(db: Session, room_id: int, winner: int | None) -> None:
+    """Xona tournamentga tegishli bo'lsa, tegishli tournament_service
+    funksiyasini chaqiradi. Bu KRITIK BO'LMAGAN qadam — xato bersa faqat
+    logga yoziladi, o'yin natijasi (rating/room) allaqachon yozib bo'lingan."""
+    try:
+        room = db.query(Room).filter(Room.id == room_id).first()
+        if room is None or room.room_type != RoomType.TOURNAMENT:
+            return
+
+        if winner is not None:
+            tournament_service.handle_tournament_match_finished(db, room_id, winner)
+        else:
+            tournament_service.handle_tournament_match_abandoned(db, room_id)
+
+    except Exception:
+        logger.exception(
+            "Tournament match holatini yangilashda xato room=%s winner=%s",
+            room_id, winner,
+        )
 
 
 async def finish_game(
@@ -46,9 +70,6 @@ async def finish_game(
         False -> avval yakunlangan yoki xatolik yuz berdi
     """
 
-    # Dasturchi xatosi (loser berilmagan) — bu holatni "keyinroq qayta
-    # urinib ko'ramiz" deb yashirish noto'g'ri, shuning uchun lock/try
-    # ichiga kirmasdan darhol ko'rinadigan qilib chiqaramiz.
     if via_forfeit and loser is None:
         raise ValueError("loser required when via_forfeit=True")
 
@@ -60,18 +81,11 @@ async def finish_game(
         game.finished = True
 
         # 1-QISM — KRITIK: reyting va room holatini yakunlash.
-        # Bu ikkisidan biri muvaffaqiyatsiz bo'lsa, o'yin haqiqatan ham
-        # yakunlanmagan hisoblanadi — shuning uchun finished=False qaytariб,
-        # keyinroq qayta urinishga ruxsat beramiz (xavfsiz, chunki hech
-        # narsa hali qat'iy yozilmagan/broadcast qilinmagan).
         try:
-
             if via_forfeit:
                 if loser is None:
-                    raise ValueError(
-                        "loser required when via_forfeit=True"
-                    )
-                
+                    raise ValueError("loser required when via_forfeit=True")
+
                 apply_game_result(
                     db=db,
                     player_ids=[loser, winner],
@@ -85,11 +99,7 @@ async def finish_game(
                     winner_id=winner,
                 )
 
-            finish_room(
-                db,
-                room_id,
-            )
-
+            finish_room(db, room_id)
             db.commit()
 
         except Exception:
@@ -111,11 +121,9 @@ async def finish_game(
 
             return False
 
-        # 2-QISM — KRITIK EMAS: bu nuqtadan keyingi har qanday xato
-        # o'yin holatini ORQAGA QAYTARMAYDI. Reyting va room holati
-        # allaqachon muvaffaqiyatli yozilgan — broadcast yoki xotiradan
-        # tozalash muvaffaqiyatsiz bo'lishi reytingni QAYTA hisoblashga
-        # (ya'ni ikki marta ball berilishiga) sabab bo'lmasligi kerak.
+        # 2-QISM — KRITIK EMAS: tournament signal, broadcast, xotira tozalash.
+        _notify_tournament_if_needed(db, room_id, winner)
+
         try:
             await manager.broadcast_raw(
                 room_id,
@@ -131,20 +139,16 @@ async def finish_game(
             )
 
         try:
-            game_manager.remove(
-                room_id,
-            )
+            game_manager.remove(room_id)
         except Exception:
             logger.exception(
-                "remove_game muvaffaqiyatsiz "
-                "room=%s",
+                "remove_game muvaffaqiyatsiz room=%s",
                 room_id,
             )
 
         logger.info(
             "Game finished room=%s winner=%s",
-            room_id,
-            winner,
+            room_id, winner,
         )
 
         return True
@@ -160,12 +164,6 @@ async def cancel_game(
     Xona bekor qilinganda yoki bo'shab qolganda chaqiriladi.
     Reyting hisoblanmaydi.
 
-    DIQQAT — signatura o'zgardi: avval bu funksiya None qaytarardi,
-    endi bool qaytaradi (True -> bekor qilindi, False -> avval
-    yakunlangan/bekor qilingan yoki xatolik). disconnect_watcher.py
-    hali yozilmagani uchun bu xavfsiz o'zgarish — lekin uni chaqirganda
-    shunga mos yozing.
-
     Returns:
         True  -> muvaffaqiyatli bekor qilindi
         False -> avval yakunlangan/bekor qilingan yoki xatolik yuz berdi
@@ -173,24 +171,15 @@ async def cancel_game(
 
     async with game_finish_lock:
 
-        # DIQQAT: avvalgi versiyada bu tekshiruv/o'rnatish lock'siz
-        # bajarilardi — bu finish_game() bilan bir vaqtda chaqirilsa,
-        # ikkalasi ham bir xil o'yinni ikki marta yakunlashi (ikki marta
-        # finish_room/broadcast/remove_game) mumkin edi. Endi finish_game
-        # bilan bir xil lock ishlatiladi.
         if game.finished:
             return False
 
         game.finished = True
 
         try:
-            finish_room(
-                db,
-                room_id,
-            )
-
+            finish_room(db, room_id)
             db.commit()
-            
+
         except Exception:
 
             game.finished = False
@@ -210,12 +199,13 @@ async def cancel_game(
 
             return False
 
+        # KRITIK EMAS: tournament signal (g'olibsiz yakunlanish), broadcast, tozalash.
+        _notify_tournament_if_needed(db, room_id, winner=None)
+
         try:
             await manager.broadcast_raw(
                 room_id,
-                {
-                    "type": "game_cancelled",
-                },
+                {"type": "game_cancelled"},
             )
         except Exception:
             logger.exception(
@@ -224,19 +214,13 @@ async def cancel_game(
             )
 
         try:
-            game_manager.remove(
-                room_id,
-            )
+            game_manager.remove(room_id)
         except Exception:
             logger.exception(
                 "remove_game muvaffaqiyatsiz room=%s",
                 room_id,
             )
 
-        logger.info(
-            "Game cancelled room=%s",
-            room_id,
-        )
+        logger.info("Game cancelled room=%s", room_id)
 
         return True
-    

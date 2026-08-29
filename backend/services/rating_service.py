@@ -1,9 +1,6 @@
 """
-backend/services/rating_service.py 
-Stage 12.1 — Reyting xizmati.
-
 backend/services/rating_service.py
-...
+Stage 12.1 — Reyting xizmati.
 """
 
 import logging
@@ -43,10 +40,7 @@ def apply_game_result(db: Session, player_ids: list[int], winner_id: int, via_fo
 
 def apply_forfeit_result(db: Session, forfeiter_id: int, remaining_ids: list[int]) -> None:
     """O'yin hali davom etayotganda (remaining_ids kamida 2 kishi) bitta
-    o'yinchi forfeit bo'lganda chaqiriladi. forfeiter_id — oddiy mag'lubiyat
-    kabi ball yo'qotadi va games_played +1 oladi. remaining_ids — RATING_WIN'ni
-    o'zaro teng bo'lib, bonus sifatida olishadi (games_played ularda hali
-    oshmaydi)."""
+    o'yinchi forfeit bo'lganda chaqiriladi."""
     forfeiter = db.query(User).filter(User.telegram_id == forfeiter_id).first()
     if forfeiter is not None:
         forfeiter.games_played += 1
@@ -66,4 +60,35 @@ def apply_forfeit_result(db: Session, forfeiter_id: int, remaining_ids: list[int
         RATING_LOSS,
         remaining_ids,
         RATING_WIN // len(remaining_ids) if remaining_ids else 0,
+    )
+
+
+def apply_tournament_reward(db: Session, winner_telegram_id: int, reward_points: int) -> None:
+    """Tournament g'olibiga bir martalik reward beradi.
+
+    MUHIM DIZAYN QARORI: bu funksiya games_played/wins'ni OSHIRMAYDI —
+    faqat rating'ga qo'shadi. Sabab: tournament ichida g'olib allaqachon
+    har bir match uchun apply_game_result() orqali o'z games_played/wins
+    balllarini olib bo'lgan (har bir match — oddiy UNO o'yini). Agar bu
+    yerda yana games_played+1 qilsak, "1 ta tournament g'alabasi" leaderboard
+    tarixida yolg'on ravishda "N+1 ta o'yin" bo'lib ko'rinadi.
+
+    Chaqiruvchi tomon (tournament_service.finish_tournament) DOUBLE REWARD
+    bo'lmasligini ta'minlashi kerak — ya'ni bu funksiya faqat tournament
+    status FINISHED'ga o'tayotgan aynan bir martalik tranzaksiyada
+    chaqirilishi shart."""
+    user = db.query(User).filter(User.telegram_id == winner_telegram_id).first()
+    if user is None:
+        logger.warning(
+            "apply_tournament_reward: foydalanuvchi topilmadi telegram_id=%s",
+            winner_telegram_id,
+        )
+        return
+
+    user.rating += reward_points
+    db.commit()
+
+    logger.info(
+        "Tournament reward berildi: winner=%s +%d ball",
+        winner_telegram_id, reward_points,
     )

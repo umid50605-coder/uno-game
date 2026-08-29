@@ -23,9 +23,8 @@ async function request(path, options = {}) {
     const message = typeof detail === "string"
       ? detail
       : Array.isArray(detail)
-        ? detail.map((d) => d.msg || JSON.stringify(d)).join("; ")
-        : `${path} so'rovi muvaffaqiyatsiz (${res.status})`;
-    // 403 xatolarni alohida otamiz, chunki frontend ularni UI'da ko'rsatishi kerak
+      ? detail.map((d) => d.msg || JSON.stringify(d)).join("; ")
+      : `${path} so'rovi muvaffaqiyatsiz (${res.status})`;
     const err = new Error(message);
     err.status = res.status;
     err.detail = detail;
@@ -38,37 +37,38 @@ export const api = {
   auth: (initData) => request("/auth", { method: "POST", body: JSON.stringify({ initData }) }),
   me: () => request("/me"),
   leaderboard: () => request("/leaderboard"),
-  
-  // Xonalar ro'yxati (faqat public, ochiq xonalar)
   listRooms: () => request("/rooms"),
-  
-  // Xona yaratish (isPublic: true -> public, false -> security; joinCode faqat security uchun kerak)
   createRoom: (isPublic, joinCode = null) => request("/rooms", {
     method: "POST",
     body: JSON.stringify({ is_public: isPublic, join_code: joinCode }),
   }),
-  
-  // Xonaga qo'shilish (security xonalarda joinCode kiritiladi)
   joinRoom: (roomId, joinCode = null) => request(`/rooms/${roomId}/join`, {
     method: "POST",
     body: JSON.stringify({ join_code: joinCode }),
   }),
-  
-  // Xona haqida ma'lumot (telegram_id avtomatik token orqali aniqlanadi)
   getRoom: (roomId) => request(`/rooms/${roomId}`),
-  
-  // Xonani tark etish
   leaveRoom: (roomId) => request(`/rooms/${roomId}/leave`, { method: "POST" }),
-  
-  // Tayyorlik holatini o'zgartirish
   setReady: (roomId) => request(`/rooms/${roomId}/ready`, { method: "POST" }),
-  
-  // Kutish vaqtini uzaytirish
   extendWait: (roomId) => request(`/rooms/${roomId}/wait`, { method: "POST" }),
-  
-  // Kod orqali xona qidirish (security ham, public ham topiladi)
   searchRooms: (code) => request(`/rooms/search?code=${encodeURIComponent(code)}`),
-  
-  // Tasodifiy public xona topish
   randomRoom: () => request("/rooms/random"),
+
+  // ---------------- Tournament ----------------
+  // create/get/join/leave/ready/cancel — hammasi backend/api/routes/tournament.py bilan mos.
+  createTournament: () => request("/tournaments", { method: "POST" }),
+  getTournament: (tournamentId) => request(`/tournaments/${tournamentId}`),
+  joinTournament: (tournamentId, inviteToken) => request(`/tournaments/${tournamentId}/join`, {
+    method: "POST",
+    body: JSON.stringify({ invite_token: inviteToken }),
+  }),
+  leaveTournament: (tournamentId) => request(`/tournaments/${tournamentId}/leave`, { method: "POST" }),
+  setTournamentReady: (tournamentId, ready = true) => request(`/tournaments/${tournamentId}/ready`, {
+    method: "POST",
+    body: JSON.stringify({ ready }),
+  }),
+  cancelTournament: (tournamentId) => request(`/tournaments/${tournamentId}/cancel`, { method: "POST" }),
+    getBracket: (tournamentId) => request(`/tournaments/${tournamentId}/bracket`),
+
+  // ---------------- Config ----------------
+  getConfig: () => request("/config"),
 };

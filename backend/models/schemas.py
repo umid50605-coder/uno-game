@@ -92,3 +92,70 @@ class ReadyRequest(BaseModel):
 class LeaveRoomResponse(BaseModel):
     deleted: bool
     room: RoomOut | None = None
+
+# Turnir sxemalari (davomi — file oxiriga qo'shiladi)
+
+class TournamentCreateRequest(BaseModel):
+    pass  # hech qanday qo'shimcha ma'lumot kerak emas
+
+
+class TournamentJoinRequest(BaseModel):
+    invite_token: str
+
+
+class TournamentReadyRequest(BaseModel):
+    ready: bool = True
+
+
+class TournamentPlayerOut(BaseModel):
+    telegram_id: int
+    status: str
+    ready: bool
+    joined_at: str | None = None
+    eliminated_at: str | None = None
+    eliminated_round: int | None = None
+    final_position: int | None = None
+
+
+class TournamentMatchOut(BaseModel):
+    id: int
+    round_id: int
+    room_id: int
+    status: str
+    winner_telegram_id: int | None = None
+    started_at: str | None = None
+    finished_at: str | None = None
+    player_telegram_ids: list[int] = []
+
+class TournamentRoundOut(BaseModel):
+    id: int
+    round_number: int
+    status: str
+    created_at: str | None = None
+    finished_at: str | None = None
+    matches: list[TournamentMatchOut] = []
+
+
+class TournamentOut(BaseModel):
+    id: int
+    creator_telegram_id: int
+    status: str
+    registration_started_at: str | None = None
+    registration_expires_at: str | None = None
+    started_at: str | None = None
+    finished_at: str | None = None
+    current_round: int
+    participant_count: int
+    winner_telegram_id: int | None = None
+    reward_points: int
+    created_at: str | None = None
+    players: list[TournamentPlayerOut] = []
+    rounds: list[TournamentRoundOut] = []
+
+
+class TournamentCreateOut(TournamentOut):
+    """create_tournament() javobi uchun — FAQAT shu bir martalik javobda
+    invite_token ko'rinadi. Boshqa hech qanday endpoint (GET /tournaments/{id}
+    kabi) bu maydonni qaytarmaydi — token qayta tiklanmaydi (faqat DB'da
+    hash saqlanadi)."""
+    invite_token: str

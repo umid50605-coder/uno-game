@@ -39,53 +39,33 @@ class WSClient {
 
   _openSocket() {
     const url = `${WS_BASE}/ws/rooms/${this.roomId}?token=${this.token}`;
-
-    console.log(url);
-
     this.socket = new WebSocket(url);
 
     this.socket.onopen = () => {
-
-      console.log("SOCKET OPEN");
-
       if (this.reconnectAttempt > 0) {
-          (this.handlers["_reconnected"] || []).forEach(fn => fn());
+        (this.handlers["_reconnected"] || []).forEach((fn) => fn());
       }
-
       this.reconnectAttempt = 0;
-
       this._startHeartbeat();
     };
 
     this.socket.onmessage = (event) => {
-
-      console.log("RECV:", event.data);
-
       const data = JSON.parse(event.data);
 
-      if (data.type === "pong"){
+      if (data.type === "pong") {
         this._handlePong();
         return;
       }
 
-      (this.handlers[data.type] || []).forEach(fn => fn(data));
+      (this.handlers[data.type] || []).forEach((fn) => fn(data));
     };
 
-    this.socket.onclose = (event) => {
-
-      console.log(
-          "CLOSE",
-          "code =", event.code,
-          "reason =", event.reason,
-          "wasClean =", event.wasClean
-      );
-
+    this.socket.onclose = () => {
       this._stopHeartbeat();
-
-      (this.handlers["_close"] || []).forEach(fn => fn());
+      (this.handlers["_close"] || []).forEach((fn) => fn());
 
       if (!this.intentionalClose) {
-        (this.handlers["_disconnected"] || []).forEach(fn => fn());
+        (this.handlers["_disconnected"] || []).forEach((fn) => fn());
         this._scheduleReconnect();
       }
     };
@@ -108,19 +88,12 @@ class WSClient {
   _startHeartbeat() {
     this._stopHeartbeat();
 
-    console.log("Heartbeat started");
-
     this.heartbeatTimer = setInterval(() => {
       if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
         return;
       }
-
-      console.log("PING");
-      
       this.send("ping");
-
       this._startPongTimeout();
-
     }, this.HEARTBEAT_INTERVAL_MS);
   }
 
@@ -128,13 +101,9 @@ class WSClient {
     this._stopPongTimeout();
 
     this.pongTimeoutTimer = setTimeout(() => {
-
-      console.log("PONG TIMEOUT");
-
       if (this.socket && this.socket.readyState === WebSocket.OPEN) {
         this.socket.close(4000, "Heartbeat timeout");
       }
-
     }, this.PONG_TIMEOUT_MS);
   }
 
@@ -143,7 +112,6 @@ class WSClient {
       clearInterval(this.heartbeatTimer);
       this.heartbeatTimer = null;
     }
-
     this._stopPongTimeout();
   }
 
@@ -155,8 +123,6 @@ class WSClient {
   }
 
   _handlePong() {
-    console.log("PONG");
-
     this._stopPongTimeout();
   }
 
@@ -165,25 +131,10 @@ class WSClient {
   }
 
   send(action, payload = {}) {
+    if (!this.socket) return;
+    if (this.socket.readyState !== WebSocket.OPEN) return;
 
-    console.log("SEND:", action, payload);
-
-    if (!this.socket) {
-        console.log("Socket yo'q");
-        return;
-    }
-
-    console.log("readyState =", this.socket.readyState);
-
-    if (this.socket.readyState !== WebSocket.OPEN) {
-        console.log("Socket OPEN emas");
-        return;
-    }
-
-    this.socket.send(JSON.stringify({
-        action,
-        ...payload
-    }));
+    this.socket.send(JSON.stringify({ action, ...payload }));
   }
 
   close() {

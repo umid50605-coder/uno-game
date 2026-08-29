@@ -12,6 +12,7 @@ load_dotenv()
 
 class Settings:
     BOT_TOKEN: str
+    BOT_USERNAME: str
     WEBAPP_URL: str
     WEBHOOK_URL: str
     WEBHOOK_SECRET: str
@@ -26,6 +27,7 @@ class Settings:
     def __init__(self) -> None:
 
         self.BOT_TOKEN = self._require_env("BOT_TOKEN")
+        self.BOT_USERNAME = self._require_env("BOT_USERNAME").lstrip("@")
         self.WEBAPP_URL = self._require_env("WEBAPP_URL").rstrip("/")
         self.JWT_SECRET = self._require_env("JWT_SECRET")
         self.WEBHOOK_SECRET = self._require_env("WEBHOOK_SECRET")

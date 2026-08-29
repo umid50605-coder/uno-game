@@ -3,6 +3,7 @@ backend/main.py
 """
 import asyncio
 import logging
+from datetime import datetime, timezone
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
@@ -13,7 +14,7 @@ from aiogram.types import Update
 
 from bot.handlers.start import router as start_router
 
-from api.routes import auth, game, rooms, users
+from api.routes import auth, config as config_route, game, rooms, users, tournament
 from api.routes.websocket.disconnect_watcher import disconnect_watcher
 from api.routes.websocket.router import router as websocket_router
 
@@ -23,9 +24,12 @@ from core.database import Base, SessionLocal, engine
 from models import disconnect_log as disconnect_log_model  # noqa: F401
 from models import room as room_model  # noqa: F401
 from models import user as user_model  # noqa: F401
+from models import tournament as tournament_model  # noqa: F401
+from models.tournament import Tournament, TournamentStatus
 
 from services.room_service import cleanup_stale_rooms
 from services.self_ping import self_ping_loop
+from services.tournament_service import start_tournament
 
 
 # ==========================================================
@@ -88,6 +92,8 @@ app.include_router(auth.router)
 app.include_router(users.router)
 app.include_router(rooms.router)
 app.include_router(websocket_router)
+app.include_router(tournament.router)
+app.include_router(config_route.router)
 
 
 # ==========================================================
@@ -98,14 +104,44 @@ async def _room_cleanup_loop():
     while True:
         try:
             db = SessionLocal()
-
             try:
                 cleanup_stale_rooms(db)
             finally:
                 db.close()
-
         except Exception:
             logger.exception("Xonalarni avtomatik tozalashda xato")
+
+        await asyncio.sleep(5)
+
+
+async def _tournament_watcher_loop():
+    """Har 5 soniyada registration vaqti tugagan turnirlarni tekshiradi
+    va boshlaydi. Bu YAGONA joy — bunday tekshiruv boshqa hech qayerda
+    (masalan _room_cleanup_loop ichida) takrorlanmasligi kerak."""
+    while True:
+        try:
+            db = SessionLocal()
+            try:
+                now = datetime.now(timezone.utc)
+                expired_tournaments = (
+                    db.query(Tournament)
+                    .filter(
+                        Tournament.status == TournamentStatus.REGISTRATION,
+                        Tournament.registration_expires_at <= now,
+                    )
+                    .all()
+                )
+                for t in expired_tournaments:
+                    try:
+                        start_tournament(db, t.id)
+                    except Exception:
+                        logger.exception(
+                            "Turnirni avtomatik boshlashda xato tournament=%s", t.id,
+                        )
+            finally:
+                db.close()
+        except Exception:
+            logger.exception("Turnir watcher xatosi")
 
         await asyncio.sleep(5)
 
@@ -116,14 +152,10 @@ async def _room_cleanup_loop():
 
 @app.on_event("startup")
 async def startup():
-    # Background vazifalarni ishga tushirish
     app.state.cleanup_task = asyncio.create_task(_room_cleanup_loop())
-    app.state.disconnect_task = asyncio.create_task(
-        disconnect_watcher()
-    )
-    app.state.self_ping_task = asyncio.create_task(
-        self_ping_loop(settings.WEBAPP_URL)
-    )
+    app.state.disconnect_task = asyncio.create_task(disconnect_watcher())
+    app.state.self_ping_task = asyncio.create_task(self_ping_loop(settings.WEBAPP_URL))
+    app.state.tournament_task = asyncio.create_task(_tournament_watcher_loop())
 
     try:
         await bot.set_webhook(
@@ -149,36 +181,26 @@ async def startup():
             "Webhook o'rnatishda yoki tekshirishda xato yuz berdi"
         )
 
+
 # ==========================================================
 # Webhook
 # ==========================================================
 
 @app.post("/webhook")
 async def webhook(request: Request):
-
-    secret = request.headers.get(
-        "X-Telegram-Bot-Api-Secret-Token"
-    )
+    secret = request.headers.get("X-Telegram-Bot-Api-Secret-Token")
 
     if secret != settings.WEBHOOK_SECRET:
-        raise HTTPException(
-            status_code=403,
-            detail="Forbidden",
-        )
+        raise HTTPException(status_code=403, detail="Forbidden")
 
     try:
         data = await request.json()
-
         logger.debug("Webhook update: %s", data)
-
         update = Update.model_validate(data)
-
         await dp.feed_update(bot, update)
-
     except Exception:
         logger.exception("Webhook update qayta ishlashda xato")
 
-    # Telegram qayta yubormasligi uchun doimo OK qaytaramiz
     return {"ok": True}
 
 
@@ -188,18 +210,11 @@ async def webhook(request: Request):
 
 @app.api_route("/", methods=["GET", "HEAD"])
 async def home():
-
     if not INDEX_FILE.exists():
-        raise HTTPException(
-            status_code=404,
-            detail="index.html topilmadi",
-        )
-
+        raise HTTPException(status_code=404, detail="index.html topilmadi")
     return FileResponse(INDEX_FILE)
 
 
 @app.get("/healthz")
 async def health():
-    return {
-        "status": "ok"
-    }
+    return {"status": "ok"}
