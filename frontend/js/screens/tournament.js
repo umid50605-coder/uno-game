@@ -15,7 +15,6 @@ const el = {
 
 let ws = null;
 let pollInterval = null;
-let myActiveRoomId = null; // agar men shu roundda faol o'ynayotgan bo'lsam
 
 export function initTournament() {
   el.root = document.getElementById("tournament-screen");
@@ -46,8 +45,6 @@ export function initTournament() {
   _connectWs(tournamentId);
   _refresh();
 
-  // WS asosiy yangilanish manbai, lekin tarmoq uzilishlariga qarshi
-  // zaxira sifatida sekinroq poll ham qo'yamiz (WS ulanmasa ham UI yangilanadi).
   if (pollInterval) clearInterval(pollInterval);
   pollInterval = setInterval(_refresh, 5000);
 }
@@ -85,7 +82,6 @@ function _connectWs(tournamentId) {
   try {
     ws = new WebSocket(`${WS_BASE}/ws/tournament/${tournamentId}?token=${encodeURIComponent(token)}`);
   } catch (err) {
-    // WS mavjud bo'lmasa, poll orqali davom etamiz
     return;
   }
 
@@ -105,17 +101,16 @@ function _connectWs(tournamentId) {
       setState({ tournamentId: null, tournament: null, inviteToken: null });
       showScreen("lobby");
     } else if (msg.type === "pong") {
-      // heartbeat javobi — hech narsa qilmaymiz
+      // heartbeat javobi
     }
   };
 
   ws.onclose = () => {
     ws = null;
-    // stopTournament() chaqirilmagan bo'lsa, poll orqali holat yangilanishda davom etadi.
   };
 
   ws.onerror = () => {
-    // jim — onclose baribir chaqiriladi
+    // jim
   };
 }
 
@@ -127,7 +122,7 @@ async function _refresh() {
     setState({ tournament: data });
     _render(data);
   } catch (err) {
-    // jim — vaqtinchalik tarmoq xatosi bo'lishi mumkin
+    // jim
   }
 }
 
@@ -193,31 +188,27 @@ function _renderMatch(match, matchNumber, tournamentData) {
 }
 
 function _findPlayersForMatch(tournamentData, match) {
-  // Backend hozircha TournamentMatch ichida ishtirokchilar ro'yxatini
-  // qaytarmaydi (faqat winner_telegram_id) — shuning uchun bu yerda faqat
-  // round ichidagi ACTIVE/ELIMINATED playerlarning umumiy holatidan
-  // taxminiy ko'rsatkich chiqaramiz. To'g'ri ko'rsatish uchun backend
-  // TournamentMatchOut ga "player_ids: list[int]" maydonini qo'shishi kerak
-  // (buni keyingi partiyada schemas.py + tournament_service.py ga qo'shaman).
-  return [];
+  return match.player_telegram_ids || [];
 }
 
 function _checkAndJoinMyMatch(data) {
   const { playerId, roomId } = getState();
-  const currentRound = data.rounds.find((r) => r.round_number === data.current_round);
-  if (!currentRound) return;
 
-  // Men ELIMINATED bo'lsam — hech qanday matchga avtomatik kirmaymiz,
-  // faqat kuzatib turamiz (Watch Tournament rejimi — bu ekranning o'zi shu vazifani bajaradi).
   const me = data.players.find((p) => p.telegram_id === playerId);
   if (!me || me.status !== "active") return;
 
-  // Faol matchlar orasidan meni topish uchun backend room_id ro'yxatini
-  // bermagani sababli, bu yerda round ichidagi PLAYING matchlardan birini
-  // "mening roomim" deb picking qilib bo'lmaydi — bu HAM
-  // TournamentMatchOut.player_ids kengaytmasini talab qiladi.
-  // Hozircha placeholder: agar backend kengaytirilsa, shu yerga
-  // avtomatik showScreen("room") + WS ulanish qo'shiladi.
+  const currentRound = data.rounds.find((r) => r.round_number === data.current_round);
+  if (!currentRound) return;
+
+  const myMatch = currentRound.matches.find(
+    (m) => m.status !== "finished" && (m.player_telegram_ids || []).includes(playerId)
+  );
+  if (!myMatch) return;
+
+  if (roomId === myMatch.room_id) return;
+
+  setState({ roomId: myMatch.room_id });
+  showScreen("room");
 }
 
 function _renderFinal(data) {
@@ -254,29 +245,4 @@ function _matchStatusLabel(status) {
     finished: "Tugadi",
   };
   return map[status] || status;
-}
-
-function _findPlayersForMatch(tournamentData, match) {
-  return match.player_telegram_ids || [];
-}
-
-function _checkAndJoinMyMatch(data) {
-  const { playerId, roomId } = getState();
-
-  const me = data.players.find((p) => p.telegram_id === playerId);
-  if (!me || me.status !== "active") return;
-
-  const currentRound = data.rounds.find((r) => r.round_number === data.current_round);
-  if (!currentRound) return;
-
-  const myMatch = currentRound.matches.find(
-    (m) => m.status !== "finished" && (m.player_telegram_ids || []).includes(playerId)
-  );
-  if (!myMatch) return;
-
-  // Men allaqachon shu roomdaman — qayta yo'naltirmaymiz.
-  if (roomId === myMatch.room_id) return;
-
-  setState({ roomId: myMatch.room_id });
-  showScreen("room");
 }
