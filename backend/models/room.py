@@ -55,10 +55,9 @@ class Room(Base):
     # YANGI: normal xonalarni tournament xonalaridan ajratish uchun.
     # Default NORMAL — mavjud qatorlar migratsiyadan keyin ham to'g'ri holatda qoladi.
     room_type: Mapped[RoomType] = mapped_column(
-        Enum(RoomType, values_callable=lambda enum_cls: [e.value for e in enum_cls]),
-        default=RoomType.NORMAL,
-        nullable=False,
+        Enum(RoomType), default=RoomType.NORMAL, nullable=False
     )
+
     players: Mapped[list["RoomPlayer"]] = relationship(
         back_populates="room", cascade="all, delete-orphan"
     )
