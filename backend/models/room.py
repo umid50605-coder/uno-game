@@ -12,7 +12,6 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from core.database import Base
 from models.user import User
 
-
 class RoomStatus(str, enum.Enum):
     WAITING = "waiting"
     PLAYING = "playing"
@@ -55,7 +54,9 @@ class Room(Base):
     # YANGI: normal xonalarni tournament xonalaridan ajratish uchun.
     # Default NORMAL — mavjud qatorlar migratsiyadan keyin ham to'g'ri holatda qoladi.
     room_type: Mapped[RoomType] = mapped_column(
-        Enum(RoomType), default=RoomType.NORMAL, nullable=False
+        Enum(RoomType, values_callable=lambda enum_cls: [e.value for e in enum_cls]),
+        default=RoomType.NORMAL,
+        nullable=False,
     )
 
     players: Mapped[list["RoomPlayer"]] = relationship(
