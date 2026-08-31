@@ -82,7 +82,15 @@ def check_lock(db: Session, telegram_id: int) -> dict:
         return {"locked": False}
 
     now = datetime.now(timezone.utc)
-    if user.locked_until is not None and user.locked_until > now:
-        return {"locked": True, "until": user.locked_until, "blacklisted": user.is_blacklisted}
+    locked_until = user.locked_until
+
+    # TUZATILDI: DB'dan o'qilgan locked_until naive bo'lishi mumkin
+    # (PostgreSQL 'timestamp without time zone') — aware UTC bilan
+    # solishtirishdan oldin tzinfo qo'shamiz.
+    if locked_until is not None and locked_until.tzinfo is None:
+        locked_until = locked_until.replace(tzinfo=timezone.utc)
+
+    if locked_until is not None and locked_until > now:
+        return {"locked": True, "until": locked_until, "blacklisted": user.is_blacklisted}
 
     return {"locked": False}

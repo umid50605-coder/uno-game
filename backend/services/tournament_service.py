@@ -95,6 +95,18 @@ def _hash_token(token: str) -> str:
 def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
+def _as_aware_utc(dt: datetime | None) -> datetime | None:
+    """DB'dan o'qilgan datetime naive (tzinfo=None) bo'lishi mumkin, garchi u
+    aslida UTC vaqtni ifodalasa ham (PostgreSQL 'timestamp without time zone'
+    ustunlari shunday qaytaradi). Bu funksiya uni aware UTC'ga aylantiradi,
+    shunda datetime.now(timezone.utc) bilan xavfsiz solishtirish mumkin.
+    Agar allaqachon aware bo'lsa, o'zgarishsiz qaytaradi."""
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt
+
 
 def _tournament_to_dict(tournament: Tournament) -> dict:
     db = Session.object_session(tournament)
@@ -272,9 +284,15 @@ def join_tournament(db: Session, tournament_id: int, telegram_id: int, invite_to
 
         if tournament.status != TournamentStatus.REGISTRATION:
             raise HTTPException(status_code=400, detail="Turnirga qo'shilish yopiq")
-        if _utc_now() >= tournament.registration_expires_at:
-            raise HTTPException(status_code=400, detail="Ro'yxatdan o'tish vaqti tugagan")
 
+        # TUZATILDI: DB'dan o'qilgan registration_expires_at naive bo'lishi
+        # mumkin — _as_aware_utc() orqali UTC deb belgilab, xavfsiz solishtiramiz.
+        if tournament.status != TournamentStatus.REGISTRATION:
+            raise HTTPException(status_code=400, detail="Turnirga qo'shilish yopiq")
+
+        expires_at = _as_aware_utc(tournament.registration_expires_at)
+        if expires_at is not None and _utc_now() >= expires_at:
+            raise HTTPException(status_code=400, detail="Ro'yxatdan o'tish vaqti tugagan")
         active_elsewhere = (
             db.query(TournamentPlayer)
             .join(Tournament)
@@ -308,7 +326,7 @@ def join_tournament(db: Session, tournament_id: int, telegram_id: int, invite_to
 
         tournament = _get_tournament_or_404(db, tournament.id)
         return _tournament_to_dict(tournament)
-
+    
 def join_tournament_by_token(db: Session, tournament_id: int, telegram_id: int, invite_token: str) -> dict:
     """REST qatlami uchun qulay wrapper — bir xil imzo, faqat nomi orqali
     'token bilan qo'shilish' ekanligini aniqroq ko'rsatadi. Ichida
