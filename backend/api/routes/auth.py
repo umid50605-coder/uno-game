@@ -6,8 +6,10 @@ import logging
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
+from api.deps import get_current_user_id
 from core.database import get_db
-from models.schemas import AuthRequest, AuthResponse
+from core.security import create_ws_ticket
+from models.schemas import AuthRequest, AuthResponse, WsTicketOut
 from services.auth_service import authenticate_with_init_data
 
 logger = logging.getLogger(__name__)
@@ -41,3 +43,20 @@ async def auth(
         db=db,
         init_data=payload.initData,
     )
+
+
+@router.post(
+    "/ws-ticket",
+    response_model=WsTicketOut,
+    summary="WebSocket ulanishi uchun qisqa muddatli ticket",
+    description=(
+        "Asosiy session JWT WebSocket URL'ga to'g'ridan-to'g'ri qo'yilmasligi "
+        "uchun, bu endpoint orqali (Authorization header bilan, URL'da emas) "
+        "atigi bir necha soniya amal qiladigan alohida ticket olinadi."
+    ),
+)
+async def get_ws_ticket(
+    telegram_id: int = Depends(get_current_user_id),
+) -> WsTicketOut:
+    ticket = create_ws_ticket(telegram_id)
+    return WsTicketOut(ticket=ticket)

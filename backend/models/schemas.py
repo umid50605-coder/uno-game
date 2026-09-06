@@ -159,3 +159,6 @@ class TournamentCreateOut(TournamentOut):
     kabi) bu maydonni qaytarmaydi — token qayta tiklanmaydi (faqat DB'da
     hash saqlanadi)."""
     invite_token: str
+
+class WsTicketOut(BaseModel):
+    ticket: str

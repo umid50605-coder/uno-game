@@ -32,7 +32,23 @@ if not DATABASE_URL:
 # uxlab qolgan/tarmoq uzilgan) ulanishlarni avtomatik yangilaydi — aks
 # holda "server closed the connection unexpectedly" kabi xatolar chiqishi
 # mumkin.
-engine = create_engine(DATABASE_URL, pool_pre_ping=True)
+#
+# pool_size/max_overflow: avval umuman ko'rsatilmagan edi — SQLAlchemy
+# jim turib standart 5+10=15 ulanishni olardi. Ko'plab bir vaqtdagi
+# xona/o'yinchi bo'lganda 15 ulanish tor bo'lib qolishi mumkin (16-so'rov
+# navbatda kutadi). Quyidagi qiymatlar boshlang'ich taxmin — Supabase
+# rejangizdagi max-connection limitiga qarab sozlang.
+# pool_recycle=1800: Supabase yoki oraliqdagi proxy uzoq turgan
+# ulanishni jimgina yopib qo'yishi mumkin — buni oldini olish uchun
+# 30 daqiqadan keyin ulanish avtomatik yangilanadi (pool_pre_ping bilan
+# birga qo'shimcha xavfsizlik qatlami).
+engine = create_engine(
+    DATABASE_URL,
+    pool_pre_ping=True,
+    pool_size=20,
+    max_overflow=10,
+    pool_recycle=1800,
+)
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 

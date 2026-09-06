@@ -75,12 +75,17 @@ function hideError() {
   if (el.error) el.error.classList.add("hidden");
 }
 
-function _connectWs(tournamentId) {
-  const { token } = getState();
-  if (!token) return;
+async function _connectWs(tournamentId) {
+  let ticket;
+  try {
+    const result = await api.getWsTicket();
+    ticket = result.ticket;
+  } catch (err) {
+    return; // poll-based _refresh() zaxira sifatida davom etadi
+  }
 
   try {
-    ws = new WebSocket(`${WS_BASE}/ws/tournament/${tournamentId}?token=${encodeURIComponent(token)}`);
+    ws = new WebSocket(`${WS_BASE}/ws/tournament/${tournamentId}?token=${encodeURIComponent(ticket)}`);
   } catch (err) {
     return;
   }

@@ -61,6 +61,25 @@ async def disconnect_player(
     if game.finished:
         return
 
+    # TUZATILDI (HIGH — noto'g'ri forfeit xavfi): agar bu yerga ESKI
+    # socket'ning kechikkan WebSocketDisconnect eventi tufayli kelingan
+    # bo'lsa-yu, lekin o'yinchi allaqachon YANGI socket bilan qayta
+    # ulangan bo'lsa (initial_state.py bu holatda mark_reconnected()ni
+    # chaqirgan bo'ladi), pastdagi mark_disconnected() chaqiruvi uni
+    # NOTO'G'RI ravishda yana "uzilgan" deb belgilardi — garchi u aslida
+    # hozir ham ulangan bo'lsa ham. Natijada 30s grace period behuda
+    # ishga tushib, kuzatilmasa, o'yinchi asossiz forfeit qilinishi
+    # mumkin edi (va bu abuse_service orqali uning times_forfeited/
+    # blok hisobiga ham noto'g'ri ta'sir qilardi).
+    if manager.is_connected(room_id, telegram_id):
+        logger.info(
+            "Eskirgan disconnect eventi e'tiborga olinmadi "
+            "(yangi ulanish faol) room=%s player=%s",
+            room_id,
+            telegram_id,
+        )
+        return
+
     try:
         game.mark_disconnected(
             telegram_id,
@@ -112,4 +131,3 @@ async def disconnect_player(
         room_id,
         telegram_id,
     )
-    

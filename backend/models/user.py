@@ -24,18 +24,19 @@ class User(Base):
     games_played: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     wins: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     forfeit_wins: Mapped[int] = mapped_column(Integer, default=0, nullable=False)  # YANGI
-    rating: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    # index=True: leaderboard so'rovi shu ustun bo'yicha ORDER BY qiladi.
+    rating: Mapped[int] = mapped_column(Integer, default=0, nullable=False, index=True)
 
     # Stage 14 — uzilishni suiiste'mol qilishning oldini olish
-    locked_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     is_blacklisted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     times_forfeited: Mapped[int] = mapped_column(Integer, default=0, nullable=False)  # YANGI
 
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=lambda: datetime.now(timezone.utc)
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime,
+        DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
         onupdate=lambda: datetime.now(timezone.utc),
     )

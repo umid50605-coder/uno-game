@@ -3,7 +3,7 @@ backend/services/ws_auth.py
 WebSocket authentication/authorization helper.
 
 Vazifalari:
-- JWT tokenni tekshirish
+- WS ticket'ni tekshirish (qisqa muddatli, decode_session_token EMAS)
 - DB sessiya ochish
 - Xona va o'yinchi validatsiyasi
 
@@ -21,14 +21,13 @@ import logging
 from dataclasses import dataclass
 
 from fastapi import WebSocket, status
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from collections.abc import Generator
 
 from api.deps import get_db
-from core.security import decode_session_token
-from models.room import Room, RoomStatus
-from services.room_service import get_room_player_ids
+from core.security import decode_ws_ticket
+from models.room import Room, RoomPlayer, RoomStatus
 
 logger = logging.getLogger(__name__)
 
@@ -46,11 +45,6 @@ async def _reject(
     code: int,
     db_gen: Generator[Session, None, None] | None = None,
 ) -> None:
-    """
-    Ulanishni rad etadi: avval (agar ochilgan bo'lsa) DB sessiyasini,
-    keyin websocket'ni xavfsiz yopadi. Ikkalasi ham xato tashlasa
-    ham davom etadi — rad etish jarayoni har doim yakunlanishi kerak.
-    """
     if db_gen is not None:
         try:
             db_gen.close()
@@ -72,21 +66,21 @@ async def authenticate_websocket(
     WebSocket ulanishini tekshiradi.
 
     Tekshiradi:
-      - JWT token
+      - WS ticket (qisqa muddatli, decode_ws_ticket orqali)
       - room mavjudligi
       - room PLAYING holati
       - foydalanuvchi room ichidaligi
     """
 
     try:
-        payload = decode_session_token(token)
+        payload = decode_ws_ticket(token)
     except Exception:
-        logger.exception("Tokenni dekodlashda kutilmagan xato")
+        logger.exception("WS ticket'ni dekodlashda kutilmagan xato")
         await _reject(websocket, status.WS_1008_POLICY_VIOLATION)
         return None
 
     if payload is None:
-        logger.warning("WS AUTH FAIL: JWT invalid")
+        logger.warning("WS AUTH FAIL: ticket invalid")
         await _reject(websocket, status.WS_1008_POLICY_VIOLATION)
         return None
 
@@ -114,6 +108,7 @@ async def authenticate_websocket(
     try:
         room = (
             db.query(Room)
+            .options(joinedload(Room.players).joinedload(RoomPlayer.user))
             .filter(Room.id == room_id)
             .first()
         )
@@ -137,12 +132,9 @@ async def authenticate_websocket(
             await _reject(websocket, status.WS_1008_POLICY_VIOLATION, db_gen)
             return None
 
-        room_player_ids = get_room_player_ids(db, room_id)
-
-        player_names = {
-            p.user.telegram_id: p.user.first_name
-            for p in room.players
-        }
+        sorted_players = sorted(room.players, key=lambda p: p.joined_at)
+        room_player_ids = [p.user.telegram_id for p in sorted_players]
+        player_names = {p.user.telegram_id: p.user.first_name for p in sorted_players}
 
         logger.info(
             "WS AUTH: room=%s telegram_id=%s players=%s status=%s",

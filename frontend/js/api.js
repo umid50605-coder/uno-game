@@ -53,6 +53,12 @@ export const api = {
   searchRooms: (code) => request(`/rooms/search?code=${encodeURIComponent(code)}`),
   randomRoom: () => request("/rooms/random"),
 
+  // YANGI: WebSocket ulanishi uchun qisqa muddatli ticket (30s amal qiladi).
+  // Asosiy session token endi WS URL'ga to'g'ridan-to'g'ri qo'yilmaydi —
+  // buning o'rniga har bir ulanish/qayta-ulanishdan oldin shu funksiya
+  // orqali (Authorization header bilan, URL'da EMAS) yangi ticket so'raladi.
+  getWsTicket: () => request("/auth/ws-ticket", { method: "POST" }),
+
   // ---------------- Tournament ----------------
   // create/get/join/leave/ready/cancel — hammasi backend/api/routes/tournament.py bilan mos.
   createTournament: () => request("/tournaments", { method: "POST" }),

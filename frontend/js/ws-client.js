@@ -1,6 +1,14 @@
 // ws-client.js — WebSocket ulanishini boshqaradi, xabarlarni "type" bo'yicha tarqatadi.
 // Stage 14: kutilmagan uzilishda avtomatik qayta ulanish (backoff bilan).
+//
+// TUZATILDI (MEDIUM — uzoq muddatli JWT WS URL'da oshkor bo'lishi): avval
+// connect(roomId, token) orqali asosiy session token (24 soat amal qiladi)
+// to'g'ridan-to'g'ri WS URL query-string'iga qo'yilardi. Endi connect(roomId)
+// faqat roomId oladi — har bir ulanish/qayta-ulanish OLDIDAN api.getWsTicket()
+// orqali (Authorization header bilan, URL'da EMAS) 30 soniyalik qisqa
+// muddatli ticket so'raladi, va shu ticket WS URL'ga qo'yiladi.
 import { WS_BASE } from "./config.js";
+import { api } from "./api.js";
 
 const RECONNECT_DELAYS_MS = [1000, 2000, 5000, 10000];
 const MAX_RECONNECT_ATTEMPTS = 8;
@@ -10,7 +18,6 @@ class WSClient {
     this.socket = null;
     this.handlers = {};
     this.roomId = null;
-    this.token = null;
     this.intentionalClose = false;
     this.reconnectAttempt = 0;
     this.reconnectTimer = null;
@@ -22,9 +29,8 @@ class WSClient {
     this.PONG_TIMEOUT_MS = 3000;
   }
 
-  connect(roomId, token) {
+  connect(roomId) {
     this.roomId = roomId;
-    this.token = token;
     this.intentionalClose = false;
     this.reconnectAttempt = 0;
 
@@ -37,8 +43,26 @@ class WSClient {
     this._openSocket();
   }
 
-  _openSocket() {
-    const url = `${WS_BASE}/ws/rooms/${this.roomId}?token=${this.token}`;
+  async _openSocket() {
+    let ticket;
+    try {
+      const result = await api.getWsTicket();
+      ticket = result.ticket;
+    } catch (err) {
+      // Ticket olib bo'lmadi (masalan tarmoq xatosi yoki session tugagan) —
+      // oddiy uzilish sifatida ko'rib, qayta ulanish jadvaliga qo'shamiz.
+      (this.handlers["_disconnected"] || []).forEach((fn) => fn());
+      this._scheduleReconnect();
+      return;
+    }
+
+    // connect()/qayta ulanish orasida intentionalClose bo'lishi mumkin
+    // (masalan foydalanuvchi ekrandan chiqib ketgan bo'lsa) — ticket
+    // so'rovi tugaguncha holat o'zgargan bo'lishi mumkin, shuning uchun
+    // qayta tekshiramiz.
+    if (this.intentionalClose) return;
+
+    const url = `${WS_BASE}/ws/rooms/${this.roomId}?token=${encodeURIComponent(ticket)}`;
     this.socket = new WebSocket(url);
 
     this.socket.onopen = () => {

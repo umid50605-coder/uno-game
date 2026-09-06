@@ -17,6 +17,7 @@ Bu fayl boshqa modullarning ichki logikasini bajarmaydi.
 U faqat WebSocket lifecycle'ini orchestration qiladi.
 """
 
+import asyncio
 import logging
 
 from fastapi import (
@@ -39,6 +40,14 @@ from .state import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Client har 5 soniyada "ping" yuborishi kutiladi (ws-client.js). Agar
+# undan 4 barobar ko'proq vaqt (20s) davomida HECH QANDAY xabar kelmasa,
+# bu ulanishni "texnik jihatdan o'lik" deb hisoblaymiz — masalan tarmoq
+# transport darajasida ochiq ko'rinsa-yu, lekin client uzoq vaqt hech
+# narsa yubormasa (TCP keepalive standart sozlamalari bunday holatni
+# juda kech aniqlashi mumkin).
+IDLE_TIMEOUT_SECONDS = 20
 
 
 async def _safe_close(
@@ -251,10 +260,44 @@ async def message_loop(
     while True:
 
         # ---------------------------------------------------------
-        # 1. Client xabarini kutish
+        # 1. Client xabarini kutish (idle timeout + JSON validatsiya bilan)
         # ---------------------------------------------------------
-        
-        data = await websocket.receive_json()
+        try:
+            data = await asyncio.wait_for(
+                websocket.receive_json(),
+                timeout=IDLE_TIMEOUT_SECONDS,
+            )
+        except asyncio.TimeoutError:
+            # TUZATILDI (MEDIUM — server-side idle enforcement yo'qligi):
+            # avval faqat client o'zi heartbeat yubormasa aniqlanardi.
+            # Endi server ham mustaqil ravishda uzoq sukut saqlagan
+            # ulanishlarni yopadi.
+            logger.warning(
+                "WS idle timeout (%ss) room=%s player=%s",
+                IDLE_TIMEOUT_SECONDS,
+                room_id,
+                telegram_id,
+            )
+            await _safe_close(websocket, status.WS_1000_NORMAL_CLOSURE)
+            raise WebSocketDisconnect(code=status.WS_1000_NORMAL_CLOSURE)
+        except ValueError:
+            # TUZATILDI (MEDIUM — noto'g'ri JSON butun ulanishni yiqitardi):
+            # avval JSON dekodlash xatosi shu funksiyaning ichida
+            # tutilmasdi va websocket_handler'ning umumiy
+            # except Exception blokiga tushib, ulanishni oddiy disconnect
+            # sifatida yopib yuborardi (player_disconnected broadcast
+            # qilib, grace period boshlab). Endi faqat shu bitta noto'g'ri
+            # xabar rad etiladi, ulanish davom etadi.
+            await manager.send_personal(
+                room_id,
+                telegram_id,
+                {
+                    "type": "error",
+                    "message": "Xabar formati noto'g'ri (JSON emas)",
+                },
+            )
+            continue
+
         # ---------------------------------------------------------
         # 2. Xabar formatini tekshirish
         # ---------------------------------------------------------

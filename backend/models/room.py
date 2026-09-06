@@ -39,12 +39,12 @@ class Room(Base):
     )
     max_players: Mapped[int] = mapped_column(Integer, default=4, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=lambda: datetime.now(timezone.utc)
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
     # Xona necha vaqtgacha "ochiq" (WAITING) turishi kerakligi.
     # "Kutish" tugmasi bosilganda bu qiymat yana 60 soniyaga uzaytiriladi.
     wait_deadline: Mapped[datetime] = mapped_column(
-        DateTime, default=lambda: datetime.now(timezone.utc) + timedelta(seconds=60)
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc) + timedelta(seconds=60)
     )
 
     is_public: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
@@ -74,7 +74,7 @@ class RoomPlayer(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
     is_ready: Mapped[bool] = mapped_column(default=False, nullable=False)
     joined_at: Mapped[datetime] = mapped_column(
-        DateTime, default=lambda: datetime.now(timezone.utc)
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
 
     room: Mapped["Room"] = relationship(back_populates="players")

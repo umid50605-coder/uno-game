@@ -17,9 +17,9 @@ let gameOverTimer = null;
 let disconnectCountdownTimer = null;
 
 export function initGame() {
-  const { roomId, token } = getState();
+  const { roomId } = getState();
 
-  wsClient.connect(roomId, token);
+  wsClient.connect(roomId);
 
   wsClient.on("game_state", renderState);
   wsClient.on("game_over", (data) => {

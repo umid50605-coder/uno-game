@@ -42,13 +42,14 @@ class Tournament(Base):
         Enum(TournamentStatus), default=TournamentStatus.REGISTRATION, nullable=False
     )
     registration_started_at: Mapped[datetime] = mapped_column(
-        DateTime, default=lambda: datetime.now(timezone.utc)
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
     registration_expires_at: Mapped[datetime] = mapped_column(
-        DateTime, default=lambda: datetime.now(timezone.utc) + timedelta(seconds=60)
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc) + timedelta(seconds=60),
     )
-    started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     current_round: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     participant_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     winner_telegram_id: Mapped[int | None] = mapped_column(
@@ -56,7 +57,7 @@ class Tournament(Base):
     )
     reward_points: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=lambda: datetime.now(timezone.utc)
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
 
     players: Mapped[list["TournamentPlayer"]] = relationship(
@@ -81,9 +82,9 @@ class TournamentPlayer(Base):
     )
     ready: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     joined_at: Mapped[datetime] = mapped_column(
-        DateTime, default=lambda: datetime.now(timezone.utc)
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
-    eliminated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    eliminated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     eliminated_round: Mapped[int | None] = mapped_column(Integer, nullable=True)
     final_position: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
@@ -103,9 +104,9 @@ class TournamentRound(Base):
         Enum(TournamentRoundStatus), default=TournamentRoundStatus.WAITING, nullable=False
     )
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=lambda: datetime.now(timezone.utc)
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
-    finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     tournament: Mapped["Tournament"] = relationship(back_populates="rounds")
     matches: Mapped[list["TournamentMatch"]] = relationship(
@@ -125,7 +126,7 @@ class TournamentMatch(Base):
     winner_telegram_id: Mapped[int | None] = mapped_column(
         ForeignKey("users.telegram_id"), nullable=True
     )
-    started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     round: Mapped["TournamentRound"] = relationship(back_populates="matches")

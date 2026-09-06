@@ -17,7 +17,7 @@ from fastapi import WebSocket, status
 from sqlalchemy.orm import Session
 
 from core.database import SessionLocal, get_db
-from core.security import decode_session_token
+from core.security import decode_ws_ticket
 from models.tournament import Tournament, TournamentPlayer
 
 from .state import manager
@@ -37,11 +37,11 @@ async def authenticate_tournament_ws(
     tournament_id: int,
     token: str,
 ) -> int | None:
-    """JWT token va tournament ishtirokchiligini tekshiradi. telegram_id yoki None qaytaradi."""
+    """JWT ticket va tournament ishtirokchiligini tekshiradi. telegram_id yoki None qaytaradi."""
     try:
-        payload = decode_session_token(token)
+        payload = decode_ws_ticket(token)
     except Exception:
-        logger.exception("Tournament WS: tokenni dekodlashda kutilmagan xato")
+        logger.exception("Tournament WS: ticket'ni dekodlashda kutilmagan xato")
         await _safe_close(websocket, status.WS_1008_POLICY_VIOLATION)
         return None
 

@@ -13,6 +13,7 @@ Vazifalari:
 - Agar xona tournamentga tegishli bo'lsa, tournament_service'ga signal berish
 """
 
+import asyncio
 import logging
 
 from sqlalchemy.orm import Session
@@ -32,25 +33,54 @@ from .state import (
 logger = logging.getLogger(__name__)
 
 
-def _notify_tournament_if_needed(db: Session, room_id: int, winner: int | None) -> None:
+async def _notify_tournament_if_needed(db: Session, room_id: int, winner: int | None) -> None:
     """Xona tournamentga tegishli bo'lsa, tegishli tournament_service
     funksiyasini chaqiradi. Bu KRITIK BO'LMAGAN qadam — xato bersa faqat
-    logga yoziladi, o'yin natijasi (rating/room) allaqachon yozib bo'lingan."""
+    logga yoziladi, o'yin natijasi (rating/room) allaqachon yozib bo'lingan.
+
+    TUZATILDI (CRITICAL — event loop bloklanishi): tournament_service
+    ichidagi funksiyalar threading.Lock ishlatadi. Bu funksiya asyncio
+    event loop ichida (WebSocket message_loop'dan) chaqiriladi — HAR BIR
+    tournament match tugashida ishga tushadi. Avval tournament_service
+    funksiyalari BEVOSITA chaqirilardi — bu lock band bo'lgan paytda
+    (masalan ikkita match aynan bir vaqtda tugasa) BUTUN serverdagi barcha
+    WebSocket ulanishlarini muzlatib qo'yishi mumkin edi. Endi
+    asyncio.to_thread orqali alohida threadga chiqariladi."""
     try:
         room = db.query(Room).filter(Room.id == room_id).first()
         if room is None or room.room_type != RoomType.TOURNAMENT:
             return
 
         if winner is not None:
-            tournament_service.handle_tournament_match_finished(db, room_id, winner)
+            await asyncio.to_thread(
+                tournament_service.handle_tournament_match_finished,
+                db, room_id, winner,
+            )
         else:
-            tournament_service.handle_tournament_match_abandoned(db, room_id)
+            await asyncio.to_thread(
+                tournament_service.handle_tournament_match_abandoned,
+                db, room_id,
+            )
 
     except Exception:
         logger.exception(
             "Tournament match holatini yangilashda xato room=%s winner=%s",
             room_id, winner,
         )
+        # TUZATILDI (MEDIUM — session iflos qolishi): avval bu yerda
+        # db.rollback() yo'q edi — agar tournament_service funksiyasi DB
+        # mutatsiyasini boshlab, o'zining ichki commit()iga yetmasdan xato
+        # bersa, session "iflos" holatda qolib, keyingi operatsiyalarga
+        # (masalan game_manager.remove yoki keyingi so'rov) ta'sir qilishi
+        # mumkin edi.
+        try:
+            db.rollback()
+        except Exception:
+            logger.exception(
+                "Tournament notify xatosidan keyin db.rollback() ham "
+                "muvaffaqiyatsiz room=%s",
+                room_id,
+            )
 
 
 async def finish_game(
@@ -122,7 +152,7 @@ async def finish_game(
             return False
 
         # 2-QISM — KRITIK EMAS: tournament signal, broadcast, xotira tozalash.
-        _notify_tournament_if_needed(db, room_id, winner)
+        await _notify_tournament_if_needed(db, room_id, winner)
 
         try:
             await manager.broadcast_raw(
@@ -200,7 +230,7 @@ async def cancel_game(
             return False
 
         # KRITIK EMAS: tournament signal (g'olibsiz yakunlanish), broadcast, tozalash.
-        _notify_tournament_if_needed(db, room_id, winner=None)
+        await _notify_tournament_if_needed(db, room_id, winner=None)
 
         try:
             await manager.broadcast_raw(
