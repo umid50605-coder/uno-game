@@ -39,7 +39,9 @@ class Tournament(Base):
     )
     invite_token_hash: Mapped[str] = mapped_column(String(128), nullable=False)
     status: Mapped[TournamentStatus] = mapped_column(
-        Enum(TournamentStatus), default=TournamentStatus.REGISTRATION, nullable=False
+        Enum(TournamentStatus, values_callable=lambda enum_cls: [e.value for e in enum_cls]),
+        default=TournamentStatus.REGISTRATION,
+        nullable=False,
     )
     registration_started_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
@@ -78,7 +80,9 @@ class TournamentPlayer(Base):
     tournament_id: Mapped[int] = mapped_column(ForeignKey("tournaments.id"), nullable=False)
     telegram_id: Mapped[int] = mapped_column(ForeignKey("users.telegram_id"), nullable=False)
     status: Mapped[TournamentPlayerStatus] = mapped_column(
-        Enum(TournamentPlayerStatus), default=TournamentPlayerStatus.ACTIVE, nullable=False
+        Enum(TournamentPlayerStatus, values_callable=lambda enum_cls: [e.value for e in enum_cls]),
+        default=TournamentPlayerStatus.ACTIVE,
+        nullable=False,
     )
     ready: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     joined_at: Mapped[datetime] = mapped_column(
@@ -101,7 +105,9 @@ class TournamentRound(Base):
     tournament_id: Mapped[int] = mapped_column(ForeignKey("tournaments.id"), nullable=False)
     round_number: Mapped[int] = mapped_column(Integer, nullable=False)
     status: Mapped[TournamentRoundStatus] = mapped_column(
-        Enum(TournamentRoundStatus), default=TournamentRoundStatus.WAITING, nullable=False
+        Enum(TournamentRoundStatus, values_callable=lambda enum_cls: [e.value for e in enum_cls]),
+        default=TournamentRoundStatus.WAITING,
+        nullable=False,
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
@@ -121,7 +127,9 @@ class TournamentMatch(Base):
     round_id: Mapped[int] = mapped_column(ForeignKey("tournament_rounds.id"), nullable=False)
     room_id: Mapped[int] = mapped_column(ForeignKey("rooms.id"), nullable=False)
     status: Mapped[RoomStatus] = mapped_column(
-        Enum(RoomStatus), default=RoomStatus.WAITING, nullable=False
+        Enum(RoomStatus, values_callable=lambda enum_cls: [e.value for e in enum_cls]),
+        default=RoomStatus.WAITING,
+        nullable=False,
     )
     winner_telegram_id: Mapped[int | None] = mapped_column(
         ForeignKey("users.telegram_id"), nullable=True

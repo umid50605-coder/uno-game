@@ -11,6 +11,7 @@ Vazifalari:
   connection_manager.broadcast_to_tournament() orqali yuborilgan eventlar bor.
 """
 
+import asyncio
 import logging
 
 from fastapi import WebSocket, status
@@ -23,6 +24,14 @@ from models.tournament import Tournament, TournamentPlayer
 from .state import manager
 
 logger = logging.getLogger(__name__)
+
+# TUZATILDI (MEDIUM — server-side idle enforcement yo'qligi, room WS'dagi
+# bilan bir xil muammo edi): handler.py'ga idle-timeout qo'shilganda bu
+# fayl chetda qolib ketgan edi. Endi ikkalasi bir xil himoyaga ega: client
+# 5s'da bir marta "ping" yuborishi kutiladi (frontend/js/screens/
+# tournament.js'ga ham client-heartbeat qo'shildi — avval bu yerda umuman
+# yo'q edi), server esa 20s ichida hech narsa kelmasa ulanishni o'zi yopadi.
+IDLE_TIMEOUT_SECONDS = 20
 
 
 async def _safe_close(websocket: WebSocket, code: int) -> None:
@@ -37,7 +46,7 @@ async def authenticate_tournament_ws(
     tournament_id: int,
     token: str,
 ) -> int | None:
-    """JWT ticket va tournament ishtirokchiligini tekshiradi. telegram_id yoki None qaytaradi."""
+    """WS ticket va tournament ishtirokchiligini tekshiradi. telegram_id yoki None qaytaradi."""
     try:
         payload = decode_ws_ticket(token)
     except Exception:
@@ -46,7 +55,7 @@ async def authenticate_tournament_ws(
         return None
 
     if payload is None:
-        logger.warning("Tournament WS AUTH FAIL: JWT invalid tournament=%s", tournament_id)
+        logger.warning("Tournament WS AUTH FAIL: ticket invalid tournament=%s", tournament_id)
         await _safe_close(websocket, status.WS_1008_POLICY_VIOLATION)
         return None
 
@@ -118,14 +127,13 @@ async def tournament_websocket_handler(
 ) -> None:
     telegram_id = await authenticate_tournament_ws(websocket, tournament_id, token)
     if telegram_id is None:
-        return  # websocket allaqachon yopilgan (authenticate ichida)
+        return
 
     await manager.connect_tournament(tournament_id, telegram_id, websocket)
 
     connected = True
     try:
-        # Dastlabki holatni yuborish
-        from services import tournament_service  # local import — circular importdan qochish uchun
+        from services import tournament_service
 
         db: Session = SessionLocal()
         try:
@@ -143,17 +151,31 @@ async def tournament_websocket_handler(
             connected = False
             return
 
-        # Mijozdan xabar kutish (heartbeat)
         while True:
-            msg = await websocket.receive_json()
+            try:
+                msg = await asyncio.wait_for(
+                    websocket.receive_json(),
+                    timeout=IDLE_TIMEOUT_SECONDS,
+                )
+            except asyncio.TimeoutError:
+                logger.info(
+                    "Tournament WS idle timeout (%ss) tournament=%s telegram_id=%s",
+                    IDLE_TIMEOUT_SECONDS, tournament_id, telegram_id,
+                )
+                await _safe_close(websocket, status.WS_1000_NORMAL_CLOSURE)
+                return
+            except ValueError:
+                # Noto'g'ri JSON — handler.py'dagi bilan bir xil falsafa:
+                # butun ulanishni yiqitmaymiz, faqat shu xabar e'tiborsiz
+                # qoldiriladi.
+                continue
+
             if not isinstance(msg, dict):
                 continue
             if msg.get("action") == "ping":
                 await manager.send_to_tournament(tournament_id, telegram_id, {"type": "pong"})
 
     except Exception:
-        # WebSocketDisconnect ham shu yerga tushadi — bu kutilgan holat,
-        # shuning uchun faqat info darajasida logga yozamiz.
         logger.info(
             "Tournament WS uzildi tournament=%s telegram_id=%s",
             tournament_id, telegram_id,

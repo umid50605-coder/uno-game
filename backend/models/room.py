@@ -35,7 +35,9 @@ class Room(Base):
     code: Mapped[str] = mapped_column(String(8), unique=True, index=True, nullable=False)
     host_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
     status: Mapped[RoomStatus] = mapped_column(
-        Enum(RoomStatus), default=RoomStatus.WAITING, nullable=False
+        Enum(RoomStatus, values_callable=lambda enum_cls: [e.value for e in enum_cls]),
+        default=RoomStatus.WAITING,
+        nullable=False,
     )
     max_players: Mapped[int] = mapped_column(Integer, default=4, nullable=False)
     created_at: Mapped[datetime] = mapped_column(

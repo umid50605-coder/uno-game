@@ -15,6 +15,9 @@ const el = {
 
 let ws = null;
 let pollInterval = null;
+let heartbeatTimer = null;
+
+const HEARTBEAT_INTERVAL_MS = 5000;
 
 export function initTournament() {
   el.root = document.getElementById("tournament-screen");
@@ -54,6 +57,7 @@ export function stopTournament() {
     clearInterval(pollInterval);
     pollInterval = null;
   }
+  _stopHeartbeat();
   if (ws) {
     try {
       ws.close();
@@ -75,6 +79,27 @@ function hideError() {
   if (el.error) el.error.classList.add("hidden");
 }
 
+function _startHeartbeat() {
+  _stopHeartbeat();
+  // TUZATILDI: avval bu WS uchun client hech qachon "ping" yubormasdi —
+  // faqat "pong" ni qabul qilishga tayyor edi, lekin uni hech kim
+  // qo'zg'atmasdi. Endi room-game WS (ws-client.js) bilan bir xil
+  // konvensiya: har 5s'da ping, backend esa 20s idle-timeout bilan
+  // himoyalangan (tournament_ws.py).
+  heartbeatTimer = setInterval(() => {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ action: "ping" }));
+    }
+  }, HEARTBEAT_INTERVAL_MS);
+}
+
+function _stopHeartbeat() {
+  if (heartbeatTimer) {
+    clearInterval(heartbeatTimer);
+    heartbeatTimer = null;
+  }
+}
+
 async function _connectWs(tournamentId) {
   let ticket;
   try {
@@ -89,6 +114,10 @@ async function _connectWs(tournamentId) {
   } catch (err) {
     return;
   }
+
+  ws.onopen = () => {
+    _startHeartbeat();
+  };
 
   ws.onmessage = (event) => {
     let msg;
@@ -106,16 +135,17 @@ async function _connectWs(tournamentId) {
       setState({ tournamentId: null, tournament: null, inviteToken: null });
       showScreen("lobby");
     } else if (msg.type === "pong") {
-      // heartbeat javobi
+      // heartbeat javobi — hech narsa qilmaymiz
     }
   };
 
   ws.onclose = () => {
+    _stopHeartbeat();
     ws = null;
   };
 
   ws.onerror = () => {
-    // jim
+    // jim — onclose baribir chaqiriladi
   };
 }
 
