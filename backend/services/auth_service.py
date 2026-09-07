@@ -14,8 +14,38 @@ from models.user import User
 logger = logging.getLogger(__name__)
 
 
+def _parse_telegram_user(raw_user: str | dict | None) -> dict:
+    # 4 chi: Telegram initData `user` maydoni JSON string bo'lib keladi yoki
+    # allaqachon dict bo'lib kelishi mumkin; agar string bo'lmasa va biz `json.loads`
+    # ga yuborsak, TypeError chiqadi. Bu xatolikni xavfsiz tarzda ishlov beramiz.
+    if raw_user is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Foydalanuvchi ma'lumoti topilmadi",
+        )
+
+    if isinstance(raw_user, dict):
+        return raw_user
+
+    if isinstance(raw_user, str):
+        try:
+            parsed = json.loads(raw_user)
+            if isinstance(parsed, dict):
+                return parsed
+        except (TypeError, ValueError):
+            logger.warning("Telegram user payload JSON sifatida parse qilinmadi: %r", raw_user)
+
+    raise HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail="Foydalanuvchi ma'lumoti yaroqsiz formatda",
+    )
+
+
 def _upsert_user(db: Session, telegram_user: TelegramUser) -> User:
     """Telegramdan kelgan ma'lumot asosida foydalanuvchini topadi yoki yangi yozuv yaratadi."""
+    # 4 chi: Avvalgi versiyada ma'lumotlar bo'sh yoki noto'g'ri bo'lsa, DB
+    # ga yozuv yaratilishi mumkin edi; endi user.id va asosiy maydonlar
+    # tekshirilgan holda faqat yaroqli ma'lumotlar ishlatiladi.
     user = db.query(User).filter(User.telegram_id == telegram_user.id).first()
 
     if user is None:
@@ -45,13 +75,7 @@ def authenticate_with_init_data(db: Session, init_data: str) -> AuthResponse:
         )
 
     raw_user = parsed.get("user")
-    if not raw_user:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Foydalanuvchi ma'lumoti topilmadi",
-        )
-
-    user_data = json.loads(raw_user)
+    user_data = _parse_telegram_user(raw_user)
     telegram_user = TelegramUser(**user_data)
 
     db_user = _upsert_user(db, telegram_user)

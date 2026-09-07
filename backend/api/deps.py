@@ -30,8 +30,15 @@ async def get_current_user_id(
             detail="Authorization header topilmadi",
         )
 
-    scheme, _, token = authorization.partition(" ")
+    parts = authorization.split(None, 1)
+    if len(parts) != 2:
+        logger.warning("Authorization header noto'g'ri formatda")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authorization header noto'g'ri",
+        )
 
+    scheme, token = parts
     if scheme.lower() != "bearer" or not token.strip():
         logger.warning("Authorization header noto'g'ri formatda")
         raise HTTPException(
@@ -39,6 +46,9 @@ async def get_current_user_id(
             detail="Authorization header noto'g'ri",
         )
 
+    # 4 chi: oldingi kod faqat bitta bo'sh joyga qaradi; tab/ko'p bo'sh joy
+    # yoki bo'sh token bo'lsa ham to'g'ri formatda qabul qilinmaydi. Bu
+    # holatda xatolikni erta qaytarish xavfsizroqdir.
     payload = decode_session_token(token.strip())
 
     if payload is None:

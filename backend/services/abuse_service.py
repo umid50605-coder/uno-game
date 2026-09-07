@@ -27,6 +27,14 @@ TIER3_THRESHOLD = 15  # qora ro'yxat — siz aytgan 10-20 oralig'idagi boshlang'
 BLACKLIST_LOCK_HOURS = 24 * 14  # amalda "qo'lda ochilguncha" ga yaqin
 
 
+def _normalize_utc(dt: datetime | None) -> datetime | None:
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
 def _count_recent_disconnects(db: Session, telegram_id: int) -> int:
     since = datetime.now(timezone.utc) - timedelta(hours=WINDOW_HOURS)
     return (
@@ -53,17 +61,28 @@ def record_forfeit_disconnect(db: Session, telegram_id: int) -> dict:
     tier = None
 
     if count >= TIER3_THRESHOLD:
+        # Xato: qora ro'yxat bosqichida eski, uzunroq lock ni qisqartirish
+        # mumkin edi; eng katta kandidatni saqlab qolish xavfsizroq.
         user.is_blacklisted = True
-        user.locked_until = now + timedelta(hours=BLACKLIST_LOCK_HOURS)
+        candidate = now + timedelta(hours=BLACKLIST_LOCK_HOURS)
+        existing = _normalize_utc(user.locked_until)
+        if existing is None or candidate > existing:
+            user.locked_until = candidate
         tier = "blacklist"
     elif count >= TIER2_THRESHOLD:
+        # Xato: tier2/3 yoxud boshqa avvalgi lockni qayta yozib yuborishi
+        # mumkin; uzunroq lock saqlanib qolishi kerak.
         candidate = now + timedelta(hours=TIER2_LOCK_HOURS)
-        if user.locked_until is None or candidate > user.locked_until:
+        existing = _normalize_utc(user.locked_until)
+        if existing is None or candidate > existing:
             user.locked_until = candidate
         tier = "tier2"
     elif count >= TIER1_THRESHOLD:
+        # Xato: tier1 uchun ham oldingi aylanma lockni bir xil mezon bilan
+        # taqqoslash kerak, aks holda zaifroq bloklash ishlaydi.
         candidate = now + timedelta(minutes=TIER1_LOCK_MINUTES)
-        if user.locked_until is None or candidate > user.locked_until:
+        existing = _normalize_utc(user.locked_until)
+        if existing is None or candidate > existing:
             user.locked_until = candidate
         tier = "tier1"
 
@@ -82,15 +101,16 @@ def check_lock(db: Session, telegram_id: int) -> dict:
         return {"locked": False}
 
     now = datetime.now(timezone.utc)
-    locked_until = user.locked_until
+    locked_until = _normalize_utc(user.locked_until)
 
-    # TUZATILDI: DB'dan o'qilgan locked_until naive bo'lishi mumkin
-    # (PostgreSQL 'timestamp without time zone') — aware UTC bilan
-    # solishtirishdan oldin tzinfo qo'shamiz.
-    if locked_until is not None and locked_until.tzinfo is None:
-        locked_until = locked_until.replace(tzinfo=timezone.utc)
+    # Xato: DBdan o'qilgan locked_until naive bo'lsa, UTC bilan solishtirish
+    # xatolikka olib keladi; normalizatsiya qilish kerak.
+    if user.is_blacklisted:
+        # Xato: qora ro'yxatdagi foydalanuvchi lock muddati tugagandan keyin ham
+        # blokdan chiqib ketishi mumkin; is_blacklisted ko'rsatkichi ustunlikka ega.
+        return {"locked": True, "until": locked_until, "blacklisted": True}
 
     if locked_until is not None and locked_until > now:
         return {"locked": True, "until": locked_until, "blacklisted": user.is_blacklisted}
 
-    return {"locked": False}
+    return {"locked": False, "blacklisted": user.is_blacklisted, "until": locked_until}

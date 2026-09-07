@@ -86,12 +86,14 @@ async def authenticate_websocket(
 
     sub = payload.get("sub")
 
-    if sub is None:
+    if sub is None or str(sub).strip() == "":
+        # 4 chi: WS ticket ichidagi `sub` bo'sh bo'lsa, foydalanuvchi
+        # identifikatori noto'g'ri bo'lib qoladi. Buni darhol rad etamiz.
         await _reject(websocket, status.WS_1008_POLICY_VIOLATION)
         return None
 
     try:
-        telegram_id = int(sub)
+        telegram_id = int(str(sub))
     except (TypeError, ValueError):
         await _reject(websocket, status.WS_1008_POLICY_VIOLATION)
         return None

@@ -108,6 +108,16 @@ def validate_init_data(init_data: str) -> dict | None:
         return None
 
 
+def _require_jwt_secret() -> str:
+    # 4 chi: JWT secret bo'sh bo'lsa, token yaratish xavfsiz bo'lmaydi va
+    # konfiguratsiya xatosi yashirincha `jwt.encode()` orqali o'z-o'zidan
+    # davom etib ketishi mumkin. Bu holatda xatoni erta qaytarish kerak.
+    secret = getattr(settings, "JWT_SECRET", None)
+    if not secret:
+        raise ValueError("JWT_SECRET not configured")
+    return secret
+
+
 def create_session_token(telegram_id: int) -> str:
     now = datetime.now(timezone.utc)
 
@@ -132,7 +142,7 @@ def create_session_token(telegram_id: int) -> str:
 
     return jwt.encode(
         payload,
-        settings.JWT_SECRET,
+        _require_jwt_secret(),
         algorithm=settings.JWT_ALGORITHM,
     )
 
@@ -170,6 +180,19 @@ def decode_session_token(token: str) -> dict | None:
 
         if payload.get("type") != "access":
             logger.warning("JWT type noto'g'ri")
+            return None
+
+        sub = payload.get("sub")
+        # 4 chi: JWT ichidagi `sub` maydoni bo'sh yoki int/str bo'lmagan
+        # formatda kelishi mumkin; bunday tokenlar foydalanuvchi identifikatori
+        # sifatida ishlatilganda xatolikka olib keladi. Ularni rad etamiz.
+        if sub is None or str(sub).strip() == "":
+            logger.warning("JWT token ichida 'sub' mavjud emas")
+            return None
+        try:
+            int(str(sub))
+        except (TypeError, ValueError):
+            logger.warning("JWT token ichidagi 'sub' noto'g'ri formatda")
             return None
 
         return payload
@@ -264,6 +287,19 @@ def decode_ws_ticket(token: str) -> dict | None:
 
         if payload.get("type") != "ws_ticket":
             logger.warning("WS ticket type noto'g'ri")
+            return None
+
+        sub = payload.get("sub")
+        # 4 chi: WS ticket ichidagi `sub` maydoni yaroqsiz bo'lsa, websocket
+        # autentifikatsiyasi noto'g'ri userga biriktirilishi mumkin. Uning
+        # formatini ham tekshiramiz.
+        if sub is None or str(sub).strip() == "":
+            logger.warning("WS ticket ichida 'sub' mavjud emas")
+            return None
+        try:
+            int(str(sub))
+        except (TypeError, ValueError):
+            logger.warning("WS ticket ichidagi 'sub' noto'g'ri formatda")
             return None
 
         return payload
