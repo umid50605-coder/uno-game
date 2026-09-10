@@ -41,9 +41,17 @@ def _enforce_join_attempt_limit(telegram_id: int) -> None:
 
     attempts.append(now)
 
+    # cleanup empty deques to avoid unbounded dict growth
+    if not attempts:
+        try:
+            del _join_attempts[telegram_id]
+        except KeyError:
+            pass
+
+
 
 @router.post("", response_model=RoomOut)
-async def create_room(
+def create_room(
     payload: CreateRoomRequest,
     telegram_id: int = Depends(get_current_user_id),
     db: Session = Depends(get_db),
@@ -55,7 +63,7 @@ async def create_room(
 
 
 @router.get("", response_model=list[RoomOut])
-async def list_rooms(
+def list_rooms(
     telegram_id: int = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ) -> list[RoomOut]:
@@ -63,7 +71,7 @@ async def list_rooms(
 
 
 @router.get("/search", response_model=list[RoomOut])
-async def search_rooms(
+def search_rooms(
     code: str,
     telegram_id: int = Depends(get_current_user_id),
     db: Session = Depends(get_db),
@@ -73,7 +81,7 @@ async def search_rooms(
 
 
 @router.get("/random", response_model=RoomOut)
-async def random_room(
+def random_room(
     telegram_id: int = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ) -> RoomOut:
@@ -82,7 +90,7 @@ async def random_room(
 
 
 @router.get("/{room_id}", response_model=RoomOut)
-async def get_room(
+def get_room(
     room_id: int,
     telegram_id: int = Depends(get_current_user_id),
     db: Session = Depends(get_db),
@@ -94,7 +102,16 @@ async def get_room(
     # ro'yxatini (telegram_id, first_name) ko'ra olardi — room_id ketma-ket
     # va oson taxmin qilinadigan raqam. Endi faqat shu xonaning a'zosi
     # ko'ra oladi.
-    if not any(p.telegram_id == telegram_id for p in room.players):
+    # Defensive check: room.players may be Pydantic RoomPlayerOut (has
+    # .telegram_id) or ORM RoomPlayer (has .user.telegram_id). Support both.
+    def _player_telegram_id(p):
+        t = getattr(p, "telegram_id", None)
+        if t is not None:
+            return t
+        user = getattr(p, "user", None)
+        return getattr(user, "telegram_id", None) if user is not None else None
+
+    if not any(_player_telegram_id(p) == telegram_id for p in room.players):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Siz bu xonaga a'zo emassiz",
@@ -104,7 +121,7 @@ async def get_room(
 
 
 @router.post("/{room_id}/join", response_model=RoomOut)
-async def join_room(
+def join_room(
     room_id: int,
     payload: JoinRoomRequest = JoinRoomRequest(),
     telegram_id: int = Depends(get_current_user_id),
@@ -120,7 +137,7 @@ async def join_room(
 
 
 @router.post("/{room_id}/ready", response_model=RoomOut)
-async def ready(
+def ready(
     room_id: int,
     payload: ReadyRequest = ReadyRequest(),
     telegram_id: int = Depends(get_current_user_id),
@@ -130,7 +147,7 @@ async def ready(
 
 
 @router.post("/{room_id}/wait", response_model=RoomOut)
-async def extend_wait(
+def extend_wait(
     room_id: int,
     telegram_id: int = Depends(get_current_user_id),
     db: Session = Depends(get_db),
@@ -139,7 +156,7 @@ async def extend_wait(
 
 
 @router.post("/{room_id}/leave", response_model=LeaveRoomResponse)
-async def leave_room(
+def leave_room(
     room_id: int,
     telegram_id: int = Depends(get_current_user_id),
     db: Session = Depends(get_db),
