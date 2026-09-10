@@ -1,4 +1,5 @@
 import logging
+import secrets
 from datetime import timedelta
 
 from fastapi import HTTPException, status
@@ -96,7 +97,7 @@ def join_tournament(db: Session, tournament_id: int, telegram_id: int, invite_to
 
         if not invite_token:
             raise HTTPException(status_code=403, detail="Taklif havolasi mavjud emas")
-        if not __import__("secrets").compare_digest(_hash_token(invite_token), tournament.invite_token_hash):
+        if not secrets.compare_digest(_hash_token(invite_token), tournament.invite_token_hash):
             raise HTTPException(status_code=403, detail="Noto'g'ri taklif havolasi")
 
         if tournament.status != TournamentStatus.REGISTRATION:
@@ -161,15 +162,24 @@ def leave_tournament(db: Session, tournament_id: int, telegram_id: int) -> dict:
 
 
 def mark_ready(db: Session, tournament_id: int, telegram_id: int, ready: bool) -> dict:
-    tournament = _get_tournament_or_404(db, tournament_id)
-    if tournament.status != TournamentStatus.REGISTRATION:
-        raise HTTPException(status_code=400, detail="Turnir hozir ro'yxatdan o'tish bosqichida emas")
-    player = next((p for p in tournament.players if p.telegram_id == telegram_id), None)
-    if player is None:
-        raise HTTPException(status_code=400, detail="Siz bu turnirda emassiz")
-    player.ready = ready
-    db.commit()
-    return _tournament_to_dict(_get_tournament_or_404(db, tournament.id))
+    # MUHIM (tuzatildi): boshqa barcha holat-o'zgartiruvchi funksiyalar kabi
+    # (join/leave/cancel/start/create_round) bu yerda ham tournament lock
+    # olinadi. Avval bu yo'q edi — start_tournament() aynan shu paytda
+    # tournament.players ro'yxatini o'qib, "ready bo'lmaganlarni" o'chirib
+    # tashlayotgan bo'lsa, mana shu funksiya ORASIDA (lock'siz) chaqirilib,
+    # o'yinchining "ready=True" bosishi yo'qolib ketishi (start_tournament
+    # eski, hali "ready=False" bo'lgan holatni o'qib ulgurgani sababli)
+    # mumkin edi. Lock endi bu poyga holatini yopadi.
+    with _get_tournament_lock(tournament_id):
+        tournament = _get_tournament_or_404(db, tournament_id)
+        if tournament.status != TournamentStatus.REGISTRATION:
+            raise HTTPException(status_code=400, detail="Turnir hozir ro'yxatdan o'tish bosqichida emas")
+        player = next((p for p in tournament.players if p.telegram_id == telegram_id), None)
+        if player is None:
+            raise HTTPException(status_code=400, detail="Siz bu turnirda emassiz")
+        player.ready = ready
+        db.commit()
+        return _tournament_to_dict(_get_tournament_or_404(db, tournament.id))
 
 
 def get_tournament(db: Session, tournament_id: int) -> dict:
@@ -240,6 +250,10 @@ def start_tournament(db: Session, tournament_id: int) -> dict:
         tournament.current_round = 1
         db.commit()
 
+    # create_round() o'zi ham _get_tournament_lock(tournament_id) oladi.
+    # locks.py endi RLock ishlatgani uchun bu xavfsiz (xoh shu with blokidan
+    # chiqqandan keyin, xoh hali ichida turib chaqirilsa ham) — lekin
+    # tushunarlilik uchun baribir tashqi blokdan chiqqandan keyin chaqiramiz.
     create_round(db, tournament_id, 1)
     return _tournament_to_dict(_get_tournament_or_404(db, tournament_id))
 
@@ -304,6 +318,14 @@ def create_round(db: Session, tournament_id: int, round_number: int) -> dict:
 
 
 def advance_round(db: Session, tournament_id: int, winners: list[int]) -> dict:
+    # MUHIM: bu funksiya odatda ALLAQACHON _get_tournament_lock(tournament_id)
+    # ushlab turilgan holatda chaqiriladi — matches.py::_maybe_advance_after_match()
+    # orqali, u esa handle_tournament_match_finished/_abandoned() ichida lock
+    # bilan chaqiriladi. Pastdagi create_round() chaqiruvi xuddi shu lockni
+    # yana so'raydi — bu locks.py'da RLock ishlatilgani uchun XAVFSIZ (avval
+    # oddiy Lock edi va bu aynan shu yerda DEADLOCK berardi). Agar kelajakda
+    # locks.py qaytadan oddiy Lock'ga o'zgartirilsa, bu yer birinchi bo'lib
+    # buziladi.
     tournament = _get_tournament_or_404(db, tournament_id)
     if tournament.status != TournamentStatus.IN_PROGRESS:
         raise HTTPException(status_code=400, detail="Turnir faol emas")

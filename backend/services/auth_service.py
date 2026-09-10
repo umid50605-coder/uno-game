@@ -5,6 +5,8 @@ import json
 import logging
 
 from fastapi import HTTPException, status
+from pydantic import ValidationError
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from core.security import create_session_token, validate_init_data
@@ -51,6 +53,19 @@ def _upsert_user(db: Session, telegram_user: TelegramUser) -> User:
     if user is None:
         user = User(telegram_id=telegram_user.id, first_name=telegram_user.first_name)
         db.add(user)
+        try:
+            db.flush()
+        except IntegrityError:
+            # TUZATILDI: o'ta kam uchraydigan poyga holati — bir xil yangi
+            # telegram_id uchun ikkita so'rov deyarli bir vaqtda kelsa
+            # (masalan Mini App qayta yuklanganda), ikkalasi ham "user yo'q"
+            # deb topib, ikkalasi ham INSERT qilishga urinishi mumkin.
+            # Bittasi yutadi, biz esa endi allaqachon yaratilgan yozuvni
+            # qayta o'qiymiz — 500 xato bilan qulash o'rniga.
+            db.rollback()
+            user = db.query(User).filter(User.telegram_id == telegram_user.id).first()
+            if user is None:
+                raise
 
     user.first_name = telegram_user.first_name
     user.last_name = telegram_user.last_name
@@ -76,7 +91,19 @@ def authenticate_with_init_data(db: Session, init_data: str) -> AuthResponse:
 
     raw_user = parsed.get("user")
     user_data = _parse_telegram_user(raw_user)
-    telegram_user = TelegramUser(**user_data)
+
+    try:
+        telegram_user = TelegramUser(**user_data)
+    except ValidationError:
+        # TUZATILDI: agar Telegramdan kelgan `user` obyektida majburiy
+        # maydon (masalan `id`) yo'q yoki noto'g'ri turda bo'lsa, Pydantic
+        # ValidationError tashlaydi. Avval bu ushlanmagani uchun 400 o'rniga
+        # ushlanmagan 500 xato chiqib ketardi.
+        logger.warning("Telegram user payload TelegramUser sxemasiga mos kelmadi: %r", user_data)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Foydalanuvchi ma'lumoti yaroqsiz formatda",
+        )
 
     db_user = _upsert_user(db, telegram_user)
 

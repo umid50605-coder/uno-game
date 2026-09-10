@@ -5,8 +5,17 @@ from sqlalchemy.orm import Session
 
 from models.room import RoomStatus
 from models.tournament import TournamentMatch, TournamentStatus, TournamentRoundStatus
+from services.tournament.locks import _get_tournament_lock
 
 logger = logging.getLogger(__name__)
+
+# ESLATMA: `advance_round`/`finish_tournament` (lifecycle.py'dan) atayin
+# funksiya ICHIDA import qilinadi (pastda), chunki bu ikki modul o'zaro
+# kontseptual jihatdan bog'liq — top-level import qilish services/tournament/
+# __init__.py'dagi import tartibiga (avval .lifecycle, keyin .matches)
+# jimgina bog'liq bo'lib qolardi. _get_tournament_lock esa (yuqorida)
+# hech qanday tournament ichki modulidan import qilmaydigan "barg" modul
+# bo'lgani uchun uni top-level import qilish har qanday tartibda xavfsiz.
 
 
 def _maybe_advance_after_match(db: Session, match: TournamentMatch) -> None:
@@ -50,7 +59,6 @@ def handle_tournament_match_finished(db: Session, room_id: int, winner_telegram_
         return
 
     tournament_id = match.round.tournament_id
-    from services.tournament.locks import _get_tournament_lock
 
     with _get_tournament_lock(tournament_id):
         db.refresh(match)
@@ -71,7 +79,6 @@ def handle_tournament_match_abandoned(db: Session, room_id: int) -> None:
         return
 
     tournament_id = match.round.tournament_id
-    from services.tournament.locks import _get_tournament_lock
 
     with _get_tournament_lock(tournament_id):
         db.refresh(match)

@@ -120,6 +120,14 @@ def _lock_message(lock: dict) -> str:
 def create_room(db: Session, host_telegram_id: int, is_public: bool = True, join_code: str | None = None) -> RoomOut:
     """Oddiy (normal) xona yaratish. Tournament matchlar buni ISHLATMAYDI —
     ular uchun create_tournament_match_room() bor (pastda)."""
+    # TUZATILDI: kirish ma'lumoti tekshiruvi endi eng boshida — avval bu
+    # tekshiruv _leave_current_waiting_room() (DB'ni allaqachon o'zgartirib
+    # bo'lgan) chaqiruvidan KEYIN edi, ya'ni xato holatda ham foydalanuvchi
+    # eski xonasidan chiqarib yuborilgan bo'lardi (session rollback'ga
+    # tayanmasdan, aniqrog'i shu yerda tekshirish to'g'riroq).
+    if not is_public and not join_code:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Security xona uchun kod kerak")
+
     lock = abuse_service.check_lock(db, host_telegram_id)
     if lock["locked"]:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=_lock_message(lock))
@@ -127,9 +135,6 @@ def create_room(db: Session, host_telegram_id: int, is_public: bool = True, join
     host = _get_user_or_404(db, host_telegram_id)
 
     _leave_current_waiting_room(db, host)
-
-    if not is_public and not join_code:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Security xona uchun kod kerak")
 
     code = generate_room_code()
     while db.query(Room).filter(Room.code == code).first() is not None:
@@ -220,6 +225,19 @@ def join_room(db: Session, room_id: int, telegram_id: int, join_code: str | None
     lock = abuse_service.check_lock(db, telegram_id)
     if lock["locked"]:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=_lock_message(lock))
+
+    # TUZATILDI (poyga holati / race condition): avval bu yerda faqat
+    # "SELECT, keyin agar joy bo'lsa INSERT" mantig'i bor edi. Agar ikki
+    # kishi AYNAN bir vaqtda xonaning oxirgi bo'sh joyiga qo'shilishga
+    # urinsa, ikkalasi ham hali "joy bor" ko'rinishidagi eski holatni
+    # o'qib, ikkalasi ham qo'shilib ketishi mumkin edi — natijada xona
+    # max_players'dan oshib ketardi. `SELECT ... FOR UPDATE` shu Room
+    # qatorini ushbu tranzaksiya tugaguncha qulflaydi, shu bilan bir xil
+    # room_id uchun bir vaqtdagi join so'rovlari navbat bilan, xavfsiz
+    # ishlanadi.
+    locked_room = db.query(Room).filter(Room.id == room_id).with_for_update().first()
+    if locked_room is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Xona topilmadi")
 
     room = _get_room_or_404(db, room_id)
 
@@ -389,6 +407,13 @@ def finish_room(db: Session, room_id: int) -> None:
 
     if room is not None and room.status != RoomStatus.FINISHED:
         room.status = RoomStatus.FINISHED
+        # TUZATILDI: bu yerda db.commit() yo'q edi — faylda BOSHQA barcha
+        # holat-o'zgartiruvchi funksiya o'zi commit qiladi, faqat shu
+        # funksiya yo'q edi. Agar chaqiruvchi tomon (finish.py) shu so'rov
+        # ichida keyinroq boshqa sabab bilan commit qilmasa (masalan oddiy,
+        # tournament bo'lmagan xona tugaganda), status o'zgarishi sessiya
+        # yopilganda DB'ga hech qachon yozilmasdan jimgina yo'qolib ketardi.
+        db.commit()
         logger.info("Xona %s yakunlandi (o'yin tugadi).", room.code)
 
 

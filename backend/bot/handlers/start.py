@@ -19,24 +19,21 @@ async def start(message: Message, command: CommandObject):
     tournament havolasi: t.me/<bot>?start=trny_<id>_<token>), buni ushlab,
     tournament'ga mos WebApp tugmasini ko'rsatadi.
     """
-    payload = command.args  # masalan "trny_123_AbCdEf..."
+    payload = (command.args or "").strip()  # masalan "trny_123_AbCdEf..."
 
-    if payload and payload.startswith("trny_"):
-        parts = payload.split("_", 2)
-        if len(parts) == 3:
-            _, tournament_id_str, invite_token = parts
-            try:
+    if payload.startswith("trny_"):
+        prefix, _, remainder = payload.partition("_")
+        if prefix == "trny" and remainder:
+            tournament_id_str, separator, invite_token = remainder.partition("_")
+            if separator and tournament_id_str.isdigit() and invite_token.strip():
                 tournament_id = int(tournament_id_str)
-            except ValueError:
-                tournament_id = None
-
-            if tournament_id is not None:
-                await message.answer(
-                    "🏆 Sizni turnirga taklif qilishdi!\n\n"
-                    "Qo'shilish uchun tugmani bosing:",
-                    reply_markup=tournament_keyboard(tournament_id, invite_token),
-                )
-                return
+                if tournament_id > 0:
+                    await message.answer(
+                        "🏆 Sizni turnirga taklif qilishdi!\n\n"
+                        "Qo'shilish uchun tugmani bosing:",
+                        reply_markup=tournament_keyboard(tournament_id, invite_token.strip()),
+                    )
+                    return
 
     await message.answer(
         "🎮 UNO botiga xush kelibsiz!",

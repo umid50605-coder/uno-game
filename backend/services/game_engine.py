@@ -125,13 +125,23 @@ class GameEngine:
             self.discard_pile = [top]
             random.shuffle(self.draw_pile)
 
-    def _draw_n(self, player_id: int, n: int):
+    def _draw_n(self, player_id: int, n: int) -> int:
+        """n ta karta tortishga harakat qiladi va HAQIQATDA tortilgan sonni
+        qaytaradi. Agar draw_pile ham, discard_pile ham deyarli tugagan
+        bo'lsa (108 ta kartaning deyarli barchasi allaqachon o'yinchilar
+        qo'lida — o'ta kam uchraydigan holat), so'ralgandan kamroq karta
+        berilishi mumkin; bu holatda xato tashlash yoki cheksiz tsiklga
+        kirish o'rniga jimgina to'xtaymiz."""
+        drawn = 0
         for _ in range(n):
             self._reshuffle_if_needed()
-            if self.draw_pile:
-                self.hands[player_id].append(self.draw_pile.pop())
+            if not self.draw_pile:
+                break
+            self.hands[player_id].append(self.draw_pile.pop())
+            drawn += 1
         if len(self.hands[player_id]) != 1:
             self.uno_called[player_id] = False
+        return drawn
 
     def _update_uno_flag_after_play(self, player_id: int, called_uno: bool):
         if len(self.hands[player_id]) == 1:
@@ -222,16 +232,15 @@ class GameEngine:
             return {"ok": False, "error": "Sizning navbatingiz emas"}
 
         if self.pending_draw > 0:
-            n = self.pending_draw
-            self._draw_n(player_id, n)
+            requested = self.pending_draw
+            drawn = self._draw_n(player_id, requested)
             self.pending_draw = 0
             self.pending_draw_type = None
         else:
-            n = 1
-            self._draw_n(player_id, n)
+            drawn = self._draw_n(player_id, 1)
 
         self._advance_turn(1)
-        return {"ok": True, "drawn": n}
+        return {"ok": True, "drawn": drawn}
 
     def call_uno(self, player_id: int) -> dict:
         if player_id not in self.hands:
@@ -244,6 +253,11 @@ class GameEngine:
     def catch_uno(self, catcher_id: int, target_id: int) -> dict:
         if self.winner is not None or self.finished:
             return {"ok": False, "error": "O'yin allaqachon tugagan"}
+        # TUZATILDI: target_id tekshirilardi, lekin catcher_id tekshirilmasdi —
+        # ya'ni o'yinda bo'lmagan (masalan allaqachon forfeit qilingan)
+        # birov ham "catch" harakatini bajara olardi.
+        if catcher_id not in self.hands:
+            return {"ok": False, "error": "Noma'lum o'yinchi"}
         if catcher_id == target_id:
             return {"ok": False, "error": "O'zingizni tuta olmaysiz"}
         if target_id not in self.hands:
