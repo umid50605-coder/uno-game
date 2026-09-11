@@ -140,9 +140,10 @@ def create_session_token(telegram_id: int) -> str:
         "type": "access",
     }
 
+    secret = _require_jwt_secret()
     return jwt.encode(
         payload,
-        _require_jwt_secret(),
+        secret,
         algorithm=settings.JWT_ALGORITHM,
     )
 
@@ -159,9 +160,10 @@ def decode_session_token(token: str) -> dict | None:
     """
 
     try:
+        secret = _require_jwt_secret()
         payload = jwt.decode(
             token,
-            settings.JWT_SECRET,
+            secret,
             algorithms=[settings.JWT_ALGORITHM],
             issuer=settings.JWT_ISSUER,
             audience=settings.JWT_AUDIENCE,
@@ -196,6 +198,9 @@ def decode_session_token(token: str) -> dict | None:
             return None
 
         return payload
+
+    except ValueError:
+        logger.warning("JWT_SECRET konfiguratsiyasi noto'g'ri")
 
     except ExpiredSignatureError:
         logger.info("JWT muddati tugagan")
@@ -252,9 +257,10 @@ def create_ws_ticket(telegram_id: int) -> str:
         "type": "ws_ticket",
     }
 
+    secret = _require_jwt_secret()
     return jwt.encode(
         payload,
-        settings.JWT_SECRET,
+        secret,
         algorithm=settings.JWT_ALGORITHM,
     )
 
@@ -274,9 +280,10 @@ def decode_ws_ticket(token: str) -> dict | None:
     Bu ikki token turini bir-biridan qat'iy ajratadi.
     """
     try:
+        secret = _require_jwt_secret()
         payload = jwt.decode(
             token,
-            settings.JWT_SECRET,
+            secret,
             algorithms=[settings.JWT_ALGORITHM],
             issuer=settings.JWT_ISSUER,
             audience=settings.JWT_AUDIENCE,
@@ -303,6 +310,9 @@ def decode_ws_ticket(token: str) -> dict | None:
             return None
 
         return payload
+
+    except ValueError:
+        logger.warning("WS ticket uchun JWT_SECRET konfiguratsiyasi noto'g'ri")
 
     except ExpiredSignatureError:
         logger.info("WS ticket muddati tugagan")

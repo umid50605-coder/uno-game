@@ -3,7 +3,7 @@ backend/api/routes/auth.py
 """
 import logging
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from api.deps import get_current_user_id
@@ -26,7 +26,7 @@ router = APIRouter(
     summary="Telegram WebApp autentifikatsiyasi",
     description="Telegram initData orqali foydalanuvchini autentifikatsiya qiladi va JWT session token qaytaradi.",
 )
-async def auth(
+def auth(
     payload: AuthRequest,
     db: Session = Depends(get_db),
 ) -> AuthResponse:
@@ -39,10 +39,20 @@ async def auth(
 
     logger.debug("Autentifikatsiya so'rovi qabul qilindi")
 
-    return authenticate_with_init_data(
-        db=db,
-        init_data=payload.initData,
-    )
+    try:
+        return authenticate_with_init_data(
+            db=db,
+            init_data=payload.initData,
+        )
+    except HTTPException:
+        # re-raise known HTTP errors (401/400 etc.) so FastAPI can handle them
+        raise
+    except Exception:
+        logger.exception("Autentifikatsiya ishlovida kutilmagan xato")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Serverda xatolik yuz berdi",
+        )
 
 
 @router.post(
