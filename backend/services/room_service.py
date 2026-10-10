@@ -402,19 +402,22 @@ def cleanup_stale_rooms(db: Session) -> None:
 
 def finish_room(db: Session, room_id: int) -> None:
     """O'yin tugagach xona statusini FINISHED qiladi. Normal va tournament
-    xonalar uchun bir xil — status boshqarish umumiy."""
+    xonalar uchun bir xil — status boshqarish umumiy.
+
+    TRANSACTION QOIDASI (audit F-02/F-03): bu funksiya commit QILMAYDI —
+    faqat statusni o'zgartirib flush qiladi. Commit chaqiruvchi (finish.py,
+    o'yin natijasi bilan BIR tranzaksiyada) tomonidan qilinadi. Avval bu
+    yerda o'z commit()i bor edi — natijada reyting va room statusi ikki
+    alohida tranzaksiyada commit bo'lib, biri muvaffaqiyatsiz bo'lsa
+    ikkinchisi rollback qilinmasdi.
+
+    Idempotent: status allaqachon FINISHED bo'lsa hech narsa qilmaydi."""
     room = db.query(Room).filter(Room.id == room_id).first()
 
     if room is not None and room.status != RoomStatus.FINISHED:
         room.status = RoomStatus.FINISHED
-        # TUZATILDI: bu yerda db.commit() yo'q edi — faylda BOSHQA barcha
-        # holat-o'zgartiruvchi funksiya o'zi commit qiladi, faqat shu
-        # funksiya yo'q edi. Agar chaqiruvchi tomon (finish.py) shu so'rov
-        # ichida keyinroq boshqa sabab bilan commit qilmasa (masalan oddiy,
-        # tournament bo'lmagan xona tugaganda), status o'zgarishi sessiya
-        # yopilganda DB'ga hech qachon yozilmasdan jimgina yo'qolib ketardi.
-        db.commit()
-        logger.info("Xona %s yakunlandi (o'yin tugadi).", room.code)
+        db.flush()
+        logger.info("Xona %s yakunlandi (commit kutilmoqda).", room.code)
 
 
 # ==========================================================
@@ -434,7 +437,8 @@ def create_tournament_match_room(
         qo'shiladi — normal xonaning "kod bilan kirish" mantig'i bu yerga
         aloqasi yo'q).
       - Barcha o'yinchilar BITTA tranzaksiyada qo'shiladi (join_room'ni
-        tsiklda chaqirib, xatoni yutib yuborish yo'q).
+        tsiklda chaqirib, xatoni yutib yuborish yo'q). Funksiyaning o'zi
+        commit QILMAYDI (flush qiladi) — chaqiruvchi commit qiladi.
       - Xona to'g'ridan-to'g'ri PLAYING holatida yaratiladi (tournament
         o'z ready-check bosqichini allaqachon bajargan, soxta "hammani
         ready qilib qo'yish" kerak emas).
@@ -501,11 +505,16 @@ def create_tournament_match_room(
     for tid in admitted_ids:
         db.add(RoomPlayer(room_id=room.id, user_id=users_by_tid[tid].id, is_ready=True))
 
-    db.commit()
+    # TRANSACTION QOIDASI (audit F-07): bu helper commit QILMAYDI. U
+    # tournament_service.create_round() tranzaksiyasining bir qismi sifatida
+    # chaqiriladi — avval bu yerdagi db.commit() round/match yaratish
+    # tranzaksiyasini o'rtasida bo'lib yuborardi (ba'zi xonalar commit bo'lib,
+    # round esa yarim qolishi mumkin edi). Final commit chaqiruvchida.
+    db.flush()
     room = _get_room_or_404(db, room.id)
 
     logger.info(
-        "Tournament match xonasi yaratildi: %s (players=%s, locked_out=%s)",
+        "Tournament match xonasi yaratildi (commit kutilmoqda): %s (players=%s, locked_out=%s)",
         room.code, admitted_ids, locked_out,
     )
     return room, locked_out

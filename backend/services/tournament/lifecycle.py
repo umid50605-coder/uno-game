@@ -22,7 +22,11 @@ from services.tournament.locks import _get_tournament_lock
 from services.tournament.rules import _eliminate_players, _group_players
 from services.tournament.serializers import _tournament_to_dict
 from services.tournament.utils import _as_aware_utc, _generate_invite_token, _hash_token, _utc_now
-from services.tournament.validators import _get_tournament_or_404, _get_user_or_404
+from services.tournament.validators import (
+    _get_tournament_for_update,
+    _get_tournament_or_404,
+    _get_user_or_404,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -187,26 +191,40 @@ def get_tournament(db: Session, tournament_id: int) -> dict:
 
 
 def cancel_tournament(db: Session, tournament_id: int, telegram_id: int) -> dict:
+    """Turnirni bekor qiladi. Turnir statusi va unga tegishli faol
+    match/roundlar BITTA tranzaksiyada o'zgaradi (audit F-06): avval status
+    alohida commit bo'lardi, keyin matchlar alohida — oradagi xato
+    "turnir CANCELLED, lekin matchlar hali ochiq" holatini qoldirardi."""
     with _get_tournament_lock(tournament_id):
-        tournament = _get_tournament_or_404(db, tournament_id)
-        if tournament.creator_telegram_id != telegram_id:
-            raise HTTPException(status_code=403, detail="Faqat turnir yaratuvchisi bekor qila oladi")
-        if tournament.status == TournamentStatus.FINISHED:
-            raise HTTPException(status_code=400, detail="Tugagan turnirni bekor qilib bo'lmaydi")
-        if tournament.status == TournamentStatus.CANCELLED:
-            raise HTTPException(status_code=400, detail="Turnir allaqachon bekor qilingan")
+        try:
+            tournament = _get_tournament_for_update(db, tournament_id)
+            if tournament.creator_telegram_id != telegram_id:
+                raise HTTPException(status_code=403, detail="Faqat turnir yaratuvchisi bekor qila oladi")
+            if tournament.status == TournamentStatus.FINISHED:
+                raise HTTPException(status_code=400, detail="Tugagan turnirni bekor qilib bo'lmaydi")
+            if tournament.status == TournamentStatus.CANCELLED:
+                raise HTTPException(status_code=400, detail="Turnir allaqachon bekor qilingan")
 
-        was_in_progress = tournament.status == TournamentStatus.IN_PROGRESS
-        tournament.status = TournamentStatus.CANCELLED
-        db.commit()
+            was_in_progress = tournament.status == TournamentStatus.IN_PROGRESS
+            tournament.status = TournamentStatus.CANCELLED
 
-        if was_in_progress:
-            _cancel_active_matches_for_tournament(db, tournament.id)
+            if was_in_progress:
+                _cancel_active_matches_for_tournament(db, tournament.id)
+
+            db.commit()
+        except Exception:
+            db.rollback()
+            raise
 
         return _tournament_to_dict(_get_tournament_or_404(db, tournament.id))
 
 
 def _cancel_active_matches_for_tournament(db: Session, tournament_id: int) -> None:
+    """Turnirning tugallanmagan round/matchlarini FINISHED qiladi.
+
+    TRANSACTION QOIDASI (audit F-06): bu funksiya commit QILMAYDI (faqat
+    flush) — chaqiruvchi (cancel_tournament) turnir statusi bilan birga
+    bitta tranzaksiyada commit qiladi."""
     tournament = _get_tournament_or_404(db, tournament_id)
     now = _utc_now()
     for round_obj in tournament.rounds:
@@ -218,118 +236,141 @@ def _cancel_active_matches_for_tournament(db: Session, tournament_id: int) -> No
                 match.finished_at = now
         round_obj.status = TournamentRoundStatus.FINISHED
         round_obj.finished_at = now
-    db.commit()
+    db.flush()
 
 
 def start_tournament(db: Session, tournament_id: int) -> dict:
+    """Ro'yxatdan o'tish tugagach turnirni boshlaydi.
+
+    Audit F-06: "status=IN_PROGRESS" va 1-round yaratish BITTA tranzaksiyada.
+    Avval status alohida commit bo'lib, keyin create_round() chaqirilardi —
+    create_round yiqilsa turnir IN_PROGRESS, lekin round yo'q holatda qolardi."""
     with _get_tournament_lock(tournament_id):
-        tournament = _get_tournament_or_404(db, tournament_id)
-        if tournament.status != TournamentStatus.REGISTRATION:
-            raise HTTPException(status_code=400, detail="Turnir allaqachon boshlangan yoki yakunlangan")
+        try:
+            tournament = _get_tournament_for_update(db, tournament_id)
+            if tournament.status != TournamentStatus.REGISTRATION:
+                raise HTTPException(status_code=400, detail="Turnir allaqachon boshlangan yoki yakunlangan")
 
-        not_ready = [p for p in tournament.players if not p.ready]
-        for p in not_ready:
-            db.delete(p)
-            tournament.participant_count -= 1
+            not_ready = [p for p in tournament.players if not p.ready]
+            for p in not_ready:
+                db.delete(p)
+                tournament.participant_count -= 1
 
-        db.flush()
-        active_players = [p for p in tournament.players if p.status == TournamentPlayerStatus.ACTIVE and p.ready]
+            db.flush()
+            # O'chirilgan (ready bo'lmagan) o'yinchilar `tournament.players`
+            # kolleksiyasida qolib ketmasligi uchun uni DB'dan qayta yuklaymiz.
+            # (Avval bu commit() orqali bilvosita bajarilardi — endi commit
+            # round yaratilgandan KEYIN bo'lgani uchun aniq expire kerak.)
+            db.expire(tournament, ["players"])
+            active_players = [
+                p for p in tournament.players
+                if p.status == TournamentPlayerStatus.ACTIVE and p.ready
+            ]
 
-        if len(active_players) < MIN_TOURNAMENT_PLAYERS:
-            tournament.status = TournamentStatus.CANCELLED
+            if len(active_players) < MIN_TOURNAMENT_PLAYERS:
+                tournament.status = TournamentStatus.CANCELLED
+                db.commit()
+                logger.info(
+                    "Tournament %s CANCELLED: yetarli tayyor o'yinchi yo'q (%d)",
+                    tournament.id,
+                    len(active_players),
+                )
+                return _tournament_to_dict(_get_tournament_or_404(db, tournament.id))
+
+            tournament.status = TournamentStatus.IN_PROGRESS
+            tournament.started_at = _utc_now()
+            tournament.current_round = 1
+            db.flush()
+
+            _create_round_in_tx(db, tournament, 1)
             db.commit()
-            logger.info(
-                "Tournament %s CANCELLED: yetarli tayyor o'yinchi yo'q (%d)",
-                tournament.id,
-                len(active_players),
-            )
-            return _tournament_to_dict(_get_tournament_or_404(db, tournament.id))
+        except Exception:
+            db.rollback()
+            raise
 
-        tournament.status = TournamentStatus.IN_PROGRESS
-        tournament.started_at = _utc_now()
-        tournament.current_round = 1
-        db.commit()
+        return _tournament_to_dict(_get_tournament_or_404(db, tournament_id))
 
-    # create_round() o'zi ham _get_tournament_lock(tournament_id) oladi.
-    # locks.py endi RLock ishlatgani uchun bu xavfsiz (xoh shu with blokidan
-    # chiqqandan keyin, xoh hali ichida turib chaqirilsa ham) — lekin
-    # tushunarlilik uchun baribir tashqi blokdan chiqqandan keyin chaqiramiz.
-    create_round(db, tournament_id, 1)
-    return _tournament_to_dict(_get_tournament_or_404(db, tournament_id))
+
+def _create_round_in_tx(db: Session, tournament: Tournament, round_number: int) -> None:
+    """Round + match xonalarini yaratadi (yoki turnirni yakunlaydi/bekor qiladi).
+
+    TRANSACTION QOIDASI (audit F-06/F-07): bu funksiya commit QILMAYDI va
+    tournament lock'ini O'ZI olmaydi — chaqiruvchi (create_round /
+    start_tournament / matches._advance_if_round_complete) lock'ni ushlab
+    turishi va oxirida commit qilishi SHART."""
+    active_players = [p.telegram_id for p in tournament.players if p.status == TournamentPlayerStatus.ACTIVE]
+
+    locked_out = [tid for tid in active_players if abuse_service.check_lock(db, tid)["locked"]]
+    eligible = [tid for tid in active_players if tid not in locked_out]
+
+    if locked_out:
+        _eliminate_players(tournament, locked_out, round_number, reason="bloklangan")
+        db.flush()
+
+    if len(eligible) == 0:
+        tournament.status = TournamentStatus.CANCELLED
+        db.flush()
+        logger.warning(
+            "Tournament %s CANCELLED: round %s uchun faol o'yinchi qolmadi",
+            tournament.id,
+            round_number,
+        )
+        return
+
+    if len(eligible) == 1:
+        _finish_tournament_in_tx(db, tournament, eligible[0])
+        return
+
+    round_obj = TournamentRound(
+        tournament_id=tournament.id,
+        round_number=round_number,
+        status=TournamentRoundStatus.WAITING,
+        created_at=_utc_now(),
+    )
+    db.add(round_obj)
+    db.flush()
+
+    groups = _group_players(eligible)
+
+    for group in groups:
+        room, still_locked_out = room_service.create_tournament_match_room(db, group)
+        if still_locked_out:
+            _eliminate_players(tournament, still_locked_out, round_number, reason="bloklangan (matchda)")
+
+        match = TournamentMatch(
+            round_id=round_obj.id,
+            room_id=room.id,
+            status=RoomStatus.PLAYING,
+            started_at=_utc_now(),
+            finished_at=None,
+        )
+        db.add(match)
+
+    round_obj.status = TournamentRoundStatus.IN_PROGRESS
+    db.flush()
 
 
 def create_round(db: Session, tournament_id: int, round_number: int) -> dict:
     with _get_tournament_lock(tournament_id):
-        tournament = _get_tournament_or_404(db, tournament_id)
-        if tournament.status != TournamentStatus.IN_PROGRESS:
-            raise HTTPException(status_code=400, detail="Turnir faol emas")
+        try:
+            tournament = _get_tournament_for_update(db, tournament_id)
+            if tournament.status != TournamentStatus.IN_PROGRESS:
+                raise HTTPException(status_code=400, detail="Turnir faol emas")
 
-        active_players = [p.telegram_id for p in tournament.players if p.status == TournamentPlayerStatus.ACTIVE]
-
-        locked_out = [tid for tid in active_players if abuse_service.check_lock(db, tid)["locked"]]
-        eligible = [tid for tid in active_players if tid not in locked_out]
-
-        if locked_out:
-            _eliminate_players(tournament, locked_out, round_number, reason="bloklangan")
-            db.flush()
-
-        if len(eligible) == 0:
-            tournament.status = TournamentStatus.CANCELLED
+            _create_round_in_tx(db, tournament, round_number)
             db.commit()
-            logger.warning(
-                "Tournament %s CANCELLED: round %s uchun faol o'yinchi qolmadi",
-                tournament.id,
-                round_number,
-            )
-            return _tournament_to_dict(_get_tournament_or_404(db, tournament.id))
+        except Exception:
+            db.rollback()
+            raise
 
-        if len(eligible) == 1:
-            db.commit()
-            return finish_tournament(db, tournament_id, eligible[0])
-
-        round_obj = TournamentRound(
-            tournament_id=tournament.id,
-            round_number=round_number,
-            status=TournamentRoundStatus.WAITING,
-            created_at=_utc_now(),
-        )
-        db.add(round_obj)
-        db.flush()
-
-        groups = _group_players(eligible)
-
-        for group in groups:
-            room, still_locked_out = room_service.create_tournament_match_room(db, group)
-            if still_locked_out:
-                _eliminate_players(tournament, still_locked_out, round_number, reason="bloklangan (matchda)")
-
-            match = TournamentMatch(
-                round_id=round_obj.id,
-                room_id=room.id,
-                status=RoomStatus.PLAYING,
-                started_at=_utc_now(),
-                finished_at=None,
-            )
-            db.add(match)
-
-        round_obj.status = TournamentRoundStatus.IN_PROGRESS
-        db.commit()
-        return _tournament_to_dict(_get_tournament_or_404(db, tournament.id))
+        return _tournament_to_dict(_get_tournament_or_404(db, tournament_id))
 
 
-def advance_round(db: Session, tournament_id: int, winners: list[int]) -> dict:
-    # MUHIM: bu funksiya odatda ALLAQACHON _get_tournament_lock(tournament_id)
-    # ushlab turilgan holatda chaqiriladi — matches.py::_maybe_advance_after_match()
-    # orqali, u esa handle_tournament_match_finished/_abandoned() ichida lock
-    # bilan chaqiriladi. Pastdagi create_round() chaqiruvi xuddi shu lockni
-    # yana so'raydi — bu locks.py'da RLock ishlatilgani uchun XAVFSIZ (avval
-    # oddiy Lock edi va bu aynan shu yerda DEADLOCK berardi). Agar kelajakda
-    # locks.py qaytadan oddiy Lock'ga o'zgartirilsa, bu yer birinchi bo'lib
-    # buziladi.
-    tournament = _get_tournament_or_404(db, tournament_id)
-    if tournament.status != TournamentStatus.IN_PROGRESS:
-        raise HTTPException(status_code=400, detail="Turnir faol emas")
+def _advance_round_in_tx(db: Session, tournament: Tournament, winners: list[int]) -> None:
+    """Yutmaganlarni eliminatsiya qiladi va keyingi roundni yaratadi.
 
+    TRANSACTION QOIDASI (audit F-06): commit QILMAYDI, lock OLMAYDI —
+    chaqiruvchi ikkalasiga ham mas'ul."""
     current_round = tournament.current_round
     winners_set = set(winners)
     for p in tournament.players:
@@ -342,36 +383,90 @@ def advance_round(db: Session, tournament_id: int, winners: list[int]) -> dict:
 
     next_round_number = current_round + 1
     tournament.current_round = next_round_number
-    db.commit()
+    db.flush()
 
-    create_round(db, tournament.id, next_round_number)
-    return _tournament_to_dict(_get_tournament_or_404(db, tournament.id))
+    _create_round_in_tx(db, tournament, next_round_number)
 
 
-def finish_tournament(db: Session, tournament_id: int, winner_telegram_id: int) -> dict:
-    tournament = _get_tournament_or_404(db, tournament_id)
+def advance_round(db: Session, tournament_id: int, winners: list[int]) -> dict:
+    """Ommaviy wrapper: eliminatsiya + keyingi round BITTA tranzaksiyada.
+
+    Avval bu funksiya avval current_round'ni commit qilib, keyin create_round()
+    ni alohida tranzaksiyada chaqirardi (audit F-06) — oradagi xato
+    "round FINISHED, turnir IN_PROGRESS, yangi round yo'q" holatini qoldirardi.
+
+    Lock RLock bo'lgani uchun (locks.py) qayta kirish xavfsiz."""
+    with _get_tournament_lock(tournament_id):
+        try:
+            tournament = _get_tournament_for_update(db, tournament_id)
+            if tournament.status != TournamentStatus.IN_PROGRESS:
+                raise HTTPException(status_code=400, detail="Turnir faol emas")
+
+            _advance_round_in_tx(db, tournament, winners)
+            db.commit()
+        except Exception:
+            db.rollback()
+            raise
+
+        return _tournament_to_dict(_get_tournament_or_404(db, tournament_id))
+
+
+def _finish_tournament_in_tx(db: Session, tournament: Tournament, winner_telegram_id: int) -> None:
+    """Turnirni yakunlaydi va g'olibga reward beradi — commit QILMAYDI.
+
+    Audit F-08/F-15:
+      - status FINISHED + g'olib + reward_points + g'olib balansi BITTA
+        tranzaksiyada commit bo'ladi (chaqiruvchi commit qiladi). Avval status
+        alohida commit bo'lib, reward keyin berilardi — reward yiqilsa
+        "FINISHED, lekin reward berilmagan" holati qolardi.
+      - Faqat IN_PROGRESS -> FINISHED o'tishiga ruxsat. REGISTRATION va
+        CANCELLED turnirni "yakunlab" bo'lmaydi (avval faqat FINISHED
+        tekshirilardi).
+      - Reward IDEMPOTENT: u faqat shu o'tish ichida beriladi, o'tish esa
+        status tekshiruvi (+ chaqiruvchi ushlab turgan lock/DB qatori
+        qulfi) tufayli faqat bir marta bajariladi."""
     if tournament.status == TournamentStatus.FINISHED:
         raise HTTPException(status_code=400, detail="Turnir allaqachon yakunlangan")
+    if tournament.status != TournamentStatus.IN_PROGRESS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Turnir '{tournament.status.value}' holatida — uni yakunlab bo'lmaydi",
+        )
+
+    winner_player = next((p for p in tournament.players if p.telegram_id == winner_telegram_id), None)
+    if winner_player is None:
+        raise HTTPException(status_code=400, detail="G'olib shu turnir ishtirokchisi emas")
+
+    reward_points = tournament.participant_count * REWARD_PER_PARTICIPANT
 
     tournament.status = TournamentStatus.FINISHED
     tournament.finished_at = _utc_now()
     tournament.winner_telegram_id = winner_telegram_id
-    reward_points = tournament.participant_count * REWARD_PER_PARTICIPANT
     tournament.reward_points = reward_points
 
-    winner_player = next((p for p in tournament.players if p.telegram_id == winner_telegram_id), None)
-    if winner_player:
-        winner_player.status = TournamentPlayerStatus.WINNER
-        winner_player.final_position = 1
+    winner_player.status = TournamentPlayerStatus.WINNER
+    winner_player.final_position = 1
 
-    db.commit()
+    db.flush()
     apply_tournament_reward(db, winner_telegram_id, reward_points)
 
     logger.info(
-        "Tournament %s FINISHED: winner=%s reward=%d",
+        "Tournament %s FINISHED (commit kutilmoqda): winner=%s reward=%d",
         tournament.id,
         winner_telegram_id,
         reward_points,
     )
 
-    return _tournament_to_dict(_get_tournament_or_404(db, tournament.id))
+
+def finish_tournament(db: Session, tournament_id: int, winner_telegram_id: int) -> dict:
+    """Ommaviy wrapper: turnirni yakunlash + reward BITTA tranzaksiyada."""
+    with _get_tournament_lock(tournament_id):
+        try:
+            tournament = _get_tournament_for_update(db, tournament_id)
+            _finish_tournament_in_tx(db, tournament, winner_telegram_id)
+            db.commit()
+        except Exception:
+            db.rollback()
+            raise
+
+        return _tournament_to_dict(_get_tournament_or_404(db, tournament_id))

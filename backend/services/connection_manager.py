@@ -85,6 +85,16 @@ class ConnectionManager:
     def is_connected(self, room_id: int, player_id: int) -> bool:
         return player_id in self.rooms.get(room_id, {})
 
+    def is_current(self, room_id: int, player_id: int, websocket: WebSocket) -> bool:
+        """Audit F-10: shu `websocket` hozirda shu o'yinchining JORIY ulanishimi?
+
+        connect() yangi socketni eski socket ustiga yozadi, lekin eski socketning
+        handler coroutine'i ishlashda davom etishi mumkin ("stale" ulanish).
+        Handler har bir xabarni qayta ishlashdan OLDIN shu metodni tekshiradi:
+        False bo'lsa — bu eskirgan ulanish, u hech qanday harakat bajara olmaydi
+        va yopilishi kerak (yangi/joriy socketga tegmasdan)."""
+        return self.rooms.get(room_id, {}).get(player_id) is websocket
+
     # ---------------- Tournament connections ----------------
 
     async def connect_tournament(self, tournament_id: int, player_id: int, websocket: WebSocket):

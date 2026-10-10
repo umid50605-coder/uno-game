@@ -1,0 +1,7 @@
+# Faqat testlar uchun (production image'iga kirmaydi).
+#   cd backend && TEST_DATABASE_URL=postgresql://user@host:port/unotest pytest -q
+# DIQQAT: testlar har bir testdan oldin jadvallarni O'CHIRIB QAYTA YARATADI.
+# Shuning uchun TEST_DATABASE_URL'dagi baza nomida "test" bo'lishi SHART
+# (aks holda conftest ishni to'xtatadi) — production bazani ko'rsatmang.
+pytest
+pytest-asyncio

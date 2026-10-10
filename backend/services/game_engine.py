@@ -334,6 +334,56 @@ class GameEngine:
 
         return {"ok": True, "forfeited": player_id}
 
+    def forfeit_is_due(self, player_id: int) -> bool:
+        """Audit F-05: o'yinchi HOZIR forfeit qilinishi kerakmi? (sof tekshiruv,
+        holatni o'zgartirmaydi).
+
+        Forfeit jarayoni DB'ga yozishdan OLDIN va (lock kutilgan bo'lsa)
+        KEYIN qayta tekshirish uchun ishlatiladi: bu orada o'yinchi qayta
+        ulangan, o'yin tugagan yoki g'olib aniqlangan bo'lishi mumkin."""
+        if self.finished or self.winner is not None:
+            return False
+        if player_id not in self.player_ids:
+            return False
+        ts = self.disconnected_at.get(player_id)
+        if ts is None:
+            return False
+        return (datetime.now(timezone.utc) - ts).total_seconds() >= GRACE_PERIOD_SECONDS
+
+    def plan_forfeit(self, player_id: int) -> dict:
+        """Audit F-05: forfeit_player() QAYTARADIGAN natijani HOLATNI
+        O'ZGARTIRMASDAN oldindan hisoblaydi.
+
+        Sabab: forfeit_player() RAM'ni darhol o'zgartiradi (o'yinchini
+        ro'yxatdan olib tashlaydi, disconnected_at'ni o'chiradi). Agar shundan
+        keyin DB amali yiqilsa, RAM va DB bir-biriga mos kelmay qolardi va
+        watcher o'yinchini qayta ishlay olmasdi (disconnected_at yo'qolgan).
+        Endi tartib: plan_forfeit() -> DB (commit) -> forfeit_player() (RAM).
+
+        Returns:
+            {"ok": False}                                   — forfeit mumkin emas
+            {"ok": True, "forfeited": pid, "remaining": [...], "empty": True}
+            {"ok": True, "forfeited": pid, "remaining": [w], "winner": w}
+            {"ok": True, "forfeited": pid, "remaining": [...]}   — o'yin davom etadi
+        """
+        if self.winner is not None or player_id not in self.player_ids:
+            return {"ok": False}
+
+        remaining = [pid for pid in self.player_ids if pid != player_id]
+
+        if not remaining:
+            return {"ok": True, "forfeited": player_id, "remaining": remaining, "empty": True}
+
+        if len(remaining) == 1:
+            return {
+                "ok": True,
+                "forfeited": player_id,
+                "remaining": remaining,
+                "winner": remaining[0],
+            }
+
+        return {"ok": True, "forfeited": player_id, "remaining": remaining}
+
     # ---------- State serialization ----------
 
     def get_state(self, for_player_id: int) -> dict:

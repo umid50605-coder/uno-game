@@ -3,11 +3,13 @@ backend/main.py
 """
 import asyncio
 import logging
+import os
 from datetime import datetime, timezone
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy import text
 
 from aiogram import Bot, Dispatcher
 from aiogram.types import Update
@@ -29,7 +31,7 @@ from models.tournament import Tournament, TournamentStatus
 
 from services.room_service import cleanup_stale_rooms
 from services.self_ping import self_ping_loop
-from services.tournament_service import start_tournament
+from services.tournament_service import recover_stalled_rounds, start_tournament
 
 
 # ==========================================================
@@ -51,6 +53,53 @@ logger = logging.getLogger(__name__)
 settings = get_settings()
 
 Base.metadata.create_all(bind=engine)
+
+
+def _ensure_schema_hardening() -> None:
+    """DB-darajasidagi cheklovlarni mavjud bazaga ham qo'llaydi (audit F-14).
+
+    Base.metadata.create_all() faqat YO'Q jadvallarni yaratadi — mavjud jadvalga
+    yangi UNIQUE cheklov QO'SHMAYDI. Loyihada migratsiya vositasi (Alembic)
+    yo'q, shuning uchun model'dagi `uq_tournament_match_room_id` cheklovi
+    production bazada shu idempotent buyruq orqali yaratiladi (bir xil nom —
+    yangi bazada create_all yaratgan cheklov bilan to'qnashmaydi,
+    IF NOT EXISTS tufayli o'tkazib yuboriladi).
+
+    Agar bazada allaqachon dublikat room_id bo'lsa, indeks yaratilmaydi: bu
+    holatda server ISHGA TUSHISHI TO'XTATILMAYDI, faqat aniq ogohlantirish
+    log qilinadi (dublikatlarni qo'lda tozalab, serverni qayta ishga tushiring).
+    """
+    try:
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS uq_tournament_match_room_id "
+                    "ON tournament_matches (room_id)"
+                )
+            )
+    except Exception:
+        logger.exception(
+            "tournament_matches.room_id UNIQUE cheklovini yaratib bo'lmadi "
+            "(ehtimol dublikat room_id bor) — qo'lda tekshiring"
+        )
+
+
+_ensure_schema_hardening()
+
+# Single-worker farazi (audit W-14): GameManager, ConnectionManager va
+# tournament RLock process-local. Bir nechta worker bo'lsa o'yin holati
+# workerlar orasida bo'linib ketadi. Dockerfile `--workers 1` bilan ishga
+# tushiradi; bu yerda tasodifiy noto'g'ri sozlamani erta aniqlaymiz.
+try:
+    _web_concurrency = int(os.getenv("WEB_CONCURRENCY", "1") or "1")
+except ValueError:
+    _web_concurrency = 1
+if _web_concurrency > 1:
+    logging.getLogger(__name__).warning(
+        "WEB_CONCURRENCY=%s: bu ilova FAQAT bitta worker bilan to'g'ri ishlaydi "
+        "(o'yin holati va WebSocket ulanishlari process-local). README'ga qarang.",
+        _web_concurrency,
+    )
 
 app = FastAPI(title="UNO Game Backend")
 
@@ -113,32 +162,52 @@ async def _room_cleanup_loop():
         await asyncio.sleep(5)
 
 
+def _tournament_watcher_tick() -> None:
+    """Watcher'ning bitta sikli. SINXRON funksiya — asyncio.to_thread() ichida,
+    O'ZINING SessionLocal()'i bilan ishlaydi (event loop'ni bloklamaydi;
+    tournament_service threading.RLock ishlatadi va worker threadda
+    ishlatilishi kerak).
+
+    1) Registration vaqti tugagan turnirlarni boshlaydi.
+    2) Failure recovery (audit F-09): barcha matchlari tugagan, lekin round
+       o'tishi bajarilmay qolgan roundlarni qayta tiklaydi (idempotent).
+    """
+    db = SessionLocal()
+    try:
+        now = datetime.now(timezone.utc)
+        expired_ids = [
+            row.id
+            for row in db.query(Tournament.id)
+            .filter(
+                Tournament.status == TournamentStatus.REGISTRATION,
+                Tournament.registration_expires_at <= now,
+            )
+            .all()
+        ]
+        db.rollback()
+
+        for tournament_id in expired_ids:
+            try:
+                start_tournament(db, tournament_id)
+            except Exception:
+                db.rollback()
+                logger.exception(
+                    "Turnirni avtomatik boshlashda xato tournament=%s", tournament_id,
+                )
+
+        recover_stalled_rounds(db)
+    finally:
+        db.close()
+
+
 async def _tournament_watcher_loop():
-    """Har 5 soniyada registration vaqti tugagan turnirlarni tekshiradi
-    va boshlaydi. Bu YAGONA joy — bunday tekshiruv boshqa hech qayerda
-    (masalan _room_cleanup_loop ichida) takrorlanmasligi kerak."""
+    """Har 5 soniyada registration vaqti tugagan turnirlarni boshlaydi va
+    qotib qolgan turnir o'tishlarini qayta tiklaydi. Bu YAGONA joy — bunday
+    tekshiruv boshqa hech qayerda (masalan _room_cleanup_loop ichida)
+    takrorlanmasligi kerak."""
     while True:
         try:
-            db = SessionLocal()
-            try:
-                now = datetime.now(timezone.utc)
-                expired_tournaments = (
-                    db.query(Tournament)
-                    .filter(
-                        Tournament.status == TournamentStatus.REGISTRATION,
-                        Tournament.registration_expires_at <= now,
-                    )
-                    .all()
-                )
-                for t in expired_tournaments:
-                    try:
-                        start_tournament(db, t.id)
-                    except Exception:
-                        logger.exception(
-                            "Turnirni avtomatik boshlashda xato tournament=%s", t.id,
-                        )
-            finally:
-                db.close()
+            await asyncio.to_thread(_tournament_watcher_tick)
         except Exception:
             logger.exception("Turnir watcher xatosi")
 

@@ -3,7 +3,7 @@
 This package groups tournament responsibilities by cohesive domain boundaries:
 - lifecycle: tournament start/join/cancel/finish flows
 - rules: grouping and elimination rules
-- matches: round/match progression after game completion
+- matches: match result recording + atomic round/tournament transitions + recovery sweep
 - utils: token/time helpers
 - locks: tournament-specific concurrency guard
 """
@@ -19,7 +19,12 @@ from .lifecycle import (
     mark_ready,
     start_tournament,
 )
-from .matches import handle_tournament_match_abandoned, handle_tournament_match_finished
+from .matches import (
+    handle_tournament_match_abandoned,
+    handle_tournament_match_finished,
+    recover_stalled_rounds,
+    record_match_result,
+)
 from .rules import _eliminate_players, _group_players
 
 __all__ = [
@@ -34,6 +39,8 @@ __all__ = [
     "finish_tournament",
     "handle_tournament_match_finished",
     "handle_tournament_match_abandoned",
+    "record_match_result",
+    "recover_stalled_rounds",
     "_group_players",
     "_eliminate_players",
 ]

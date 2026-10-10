@@ -26,6 +26,8 @@ from services.tournament.locks import _get_tournament_lock
 from services.tournament.matches import (
     handle_tournament_match_abandoned,
     handle_tournament_match_finished,
+    recover_stalled_rounds,
+    record_match_result,
 )
 from services.tournament.rules import _eliminate_players, _group_players
 from services.tournament.utils import (
@@ -53,6 +55,8 @@ __all__ = [
     "finish_tournament",
     "handle_tournament_match_finished",
     "handle_tournament_match_abandoned",
+    "record_match_result",
+    "recover_stalled_rounds",
     "_get_tournament_lock",
     "_get_user_or_404",
     "_get_tournament_or_404",

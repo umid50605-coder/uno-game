@@ -122,6 +122,17 @@ class TournamentRound(Base):
 
 class TournamentMatch(Base):
     __tablename__ = "tournament_matches"
+    __table_args__ = (
+        # Audit F-14: bitta room faqat BITTA match'ga tegishli. matches.py
+        # `.filter(room_id == ...).first()` shu farazga tayanadi — dublikat
+        # bo'lsa noto'g'ri match yangilanib qolishi mumkin edi.
+        #
+        # ESLATMA: Base.metadata.create_all() mavjud jadvalga constraint
+        # QO'SHMAYDI. Mavjud (production) bazada bu cheklov main.py'dagi
+        # _ensure_schema_hardening() orqali (bir xil nom bilan, idempotent)
+        # yaratiladi.
+        UniqueConstraint("room_id", name="uq_tournament_match_room_id"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     round_id: Mapped[int] = mapped_column(ForeignKey("tournament_rounds.id"), nullable=False)

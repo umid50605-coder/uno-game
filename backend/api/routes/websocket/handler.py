@@ -15,6 +15,17 @@ Vazifalari:
 
 Bu fayl boshqa modullarning ichki logikasini bajarmaydi.
 U faqat WebSocket lifecycle'ini orchestration qiladi.
+
+DB SESSION (audit F-11): bu fayl hech qanday DB Session ushlab turmaydi.
+Autentifikatsiya qisqa muddatli sessiyada bajarilib yopiladi; o'yin
+yakunlash kabi DB amallari finish.py ichida o'zining sessiyasini ochadi.
+
+STALE SOCKET (audit F-10): o'yinchi qayta ulanganda manager yangi socketni
+eskisi ustiga yozadi, lekin eski socketning message_loop'i ishlashda davom
+etishi mumkin. message_loop har bir xabarni qayta ishlashdan OLDIN socket
+hanuz joriy ekanini tekshiradi; eskirgan bo'lsa — hech narsa bajarmasdan
+yopiladi va yangi/joriy ulanishga tegilmaydi. Bu authorization emas
+(token baribir tekshirilgan), balki concurrency/stale-connection himoyasi.
 """
 
 import asyncio
@@ -25,7 +36,6 @@ from fastapi import (
     WebSocketDisconnect,
     status,
 )
-from sqlalchemy.orm import Session
 
 from services.game_engine import GameEngine
 from services.ws_auth import authenticate_websocket
@@ -49,6 +59,10 @@ logger = logging.getLogger(__name__)
 # juda kech aniqlashi mumkin).
 IDLE_TIMEOUT_SECONDS = 20
 
+# Eskirgan (yangi ulanish bilan almashtirilgan) socketni yopishda ishlatiladigan
+# application-darajasidagi close code (4000-4999 oralig'i ilovaga ajratilgan).
+WS_CLOSE_REPLACED = 4001
+
 
 async def _safe_close(
     websocket: WebSocket,
@@ -70,8 +84,8 @@ async def websocket_handler(
     """
     Bitta WebSocket ulanishining to'liq lifecycle'ini boshqaradi.
 
-    DB session authenticate_websocket() tomonidan yaratiladi
-    va auth.db_gen orqali lifecycle oxirida yopiladi.
+    Hech qanday DB session ushlab turilmaydi (authenticate_websocket()
+    sessiyani o'zi yopib bo'lgan).
     """
 
     auth = await authenticate_websocket(
@@ -86,160 +100,170 @@ async def websocket_handler(
     telegram_id = auth.telegram_id
     player_ids = auth.room_player_ids
     player_names = auth.player_names
-    db = auth.db
 
+    # ---------------------------------------------------------
+    # 1. GameEngine olish yoki yaratish
+    # ---------------------------------------------------------
     try:
-        # ---------------------------------------------------------
-        # 1. GameEngine olish yoki yaratish
-        # ---------------------------------------------------------
-        try:
-            game = game_manager.get_or_create(
-                room_id=room_id,
-                player_ids=player_ids,
-                player_names=player_names,
-            )
+        game = game_manager.get_or_create(
+            room_id=room_id,
+            player_ids=player_ids,
+            player_names=player_names,
+        )
 
-        except Exception:
-            logger.exception(
-                "GameEngine olish/yaratishda xato "
-                "room=%s player=%s",
+    except Exception:
+        logger.exception(
+            "GameEngine olish/yaratishda xato "
+            "room=%s player=%s",
+            room_id,
+            telegram_id,
+        )
+
+        await _safe_close(
+            websocket,
+            status.WS_1011_INTERNAL_ERROR,
+        )
+        return
+
+    # ---------------------------------------------------------
+    # 2. WebSocket connectionni manager'ga qo'shish
+    # ---------------------------------------------------------
+    try:
+        await manager.connect(
+            room_id,
+            telegram_id,
+            websocket,
+        )
+
+    except WebSocketDisconnect:
+        logger.info(
+            "Player %s ulanish vaqtida uzildi room=%s",
+            telegram_id,
+            room_id,
+        )
+        return
+
+    except Exception:
+        logger.exception(
+            "WebSocket ulanishida xato "
+            "room=%s player=%s",
+            room_id,
+            telegram_id,
+        )
+        return
+
+    # ---------------------------------------------------------
+    # 3. Initial state + message loop
+    # ---------------------------------------------------------
+    try:
+        can_continue = await send_initial_state(
+            websocket=websocket,
+            room_id=room_id,
+            telegram_id=telegram_id,
+            game=game,
+        )
+
+        if not can_continue:
+            manager.disconnect(
                 room_id,
                 telegram_id,
-            )
-
-            await _safe_close(
                 websocket,
-                status.WS_1011_INTERNAL_ERROR,
             )
             return
 
-        # ---------------------------------------------------------
-        # 2. WebSocket connectionni manager'ga qo'shish
-        # ---------------------------------------------------------
+        await message_loop(
+            websocket=websocket,
+            room_id=room_id,
+            telegram_id=telegram_id,
+            game=game,
+        )
+
+    # ---------------------------------------------------------
+    # 4. Haqiqiy disconnect
+    # ---------------------------------------------------------
+    except WebSocketDisconnect:
+        logger.info(
+            "Player disconnected "
+            "room=%s player=%s",
+            room_id,
+            telegram_id,
+        )
+
+        await disconnect_player(
+            room_id=room_id,
+            telegram_id=telegram_id,
+            websocket=websocket,
+            game=game,
+        )
+
+    # ---------------------------------------------------------
+    # 5. Kutilmagan xato
+    # ---------------------------------------------------------
+    except Exception:
+        logger.exception(
+            "Unexpected websocket error "
+            "room=%s player=%s",
+            room_id,
+            telegram_id,
+        )
+
+        await disconnect_player(
+            room_id=room_id,
+            telegram_id=telegram_id,
+            websocket=websocket,
+            game=game,
+        )
+
+    # ---------------------------------------------------------
+    # 6. Message loop normal tugagan holat (o'yin yakunlandi yoki
+    #    socket eskirgan). manager.disconnect() socket identity'sini
+    #    tekshiradi, shuning uchun eskirgan socket yangi/joriy
+    #    ulanishni o'chirib yubora olmaydi.
+    # ---------------------------------------------------------
+    else:
         try:
-            await manager.connect(
+            manager.disconnect(
                 room_id,
                 telegram_id,
                 websocket,
             )
 
-        except WebSocketDisconnect:
-            logger.info(
-                "Player %s ulanish vaqtida uzildi room=%s",
-                telegram_id,
-                room_id,
-            )
-            return
-
         except Exception:
             logger.exception(
-                "WebSocket ulanishida xato "
-                "room=%s player=%s",
-                room_id,
-                telegram_id,
-            )
-            return
-
-        # ---------------------------------------------------------
-        # 3. Initial state + message loop
-        # ---------------------------------------------------------
-        try:
-            can_continue = await send_initial_state(
-                websocket=websocket,
-                room_id=room_id,
-                telegram_id=telegram_id,
-                game=game,
-            )
-
-            if not can_continue:
-                manager.disconnect(
-                    room_id,
-                    telegram_id,
-                    websocket,
-                )
-                return
-
-            await message_loop(
-                websocket=websocket,
-                db=db,
-                room_id=room_id,
-                telegram_id=telegram_id,
-                game=game,
-            )
-
-        # ---------------------------------------------------------
-        # 4. Haqiqiy disconnect
-        # ---------------------------------------------------------
-        except WebSocketDisconnect:
-            logger.info(
-                "Player disconnected "
+                "manager.disconnect xatosi "
                 "room=%s player=%s",
                 room_id,
                 telegram_id,
             )
 
-            await disconnect_player(
-                room_id=room_id,
-                telegram_id=telegram_id,
-                websocket=websocket,
-                game=game,
-            )
 
-        # ---------------------------------------------------------
-        # 5. Kutilmagan xato
-        # ---------------------------------------------------------
-        except Exception:
-            logger.exception(
-                "Unexpected websocket error "
-                "room=%s player=%s",
-                room_id,
-                telegram_id,
-            )
+async def _reject_if_stale(
+    *,
+    websocket: WebSocket,
+    room_id: int,
+    telegram_id: int,
+) -> bool:
+    """Audit F-10: shu socket hanuz o'yinchining JORIY ulanishimi?
 
-            await disconnect_player(
-                room_id=room_id,
-                telegram_id=telegram_id,
-                websocket=websocket,
-                game=game,
-            )
+    Joriy bo'lmasa (o'yinchi yangi socket bilan qayta ulangan) — socketni
+    yopadi va True qaytaradi: chaqiruvchi hech narsa qayta ishlamasdan
+    loop'dan chiqishi kerak. Yangi/joriy socketga TEGILMAYDI (xabar yuborilmaydi,
+    manager yozuvi o'zgarmaydi)."""
+    if manager.is_current(room_id, telegram_id, websocket):
+        return False
 
-        # ---------------------------------------------------------
-        # 6. Message loop normal tugagan holat
-        # ---------------------------------------------------------
-        else:
-            try:
-                manager.disconnect(
-                    room_id,
-                    telegram_id,
-                    websocket,
-                )
-
-            except Exception:
-                logger.exception(
-                    "manager.disconnect xatosi "
-                    "room=%s player=%s",
-                    room_id,
-                    telegram_id,
-                )
-
-    finally:
-        # authenticate_websocket() yaratgan DB generatorni yopamiz.
-        try:
-            auth.db_gen.close()
-
-        except Exception:
-            logger.exception(
-                "DB generatorni yopishda xato "
-                "room=%s player=%s",
-                room_id,
-                telegram_id,
-            )
+    logger.warning(
+        "Eskirgan (stale) socket xabari rad etildi room=%s player=%s",
+        room_id,
+        telegram_id,
+    )
+    await _safe_close(websocket, WS_CLOSE_REPLACED)
+    return True
 
 
 async def message_loop(
     *,
     websocket: WebSocket,
-    db: Session,
     room_id: int,
     telegram_id: int,
     game: GameEngine,
@@ -251,6 +275,7 @@ async def message_loop(
 
     - Client xabarini qabul qilish
     - Heartbeat timeoutni nazorat qilish
+    - Eskirgan (stale) socketni aniqlash va to'xtatish
     - Action dispatch
     - Game state broadcast
     - Action event broadcast
@@ -281,6 +306,14 @@ async def message_loop(
             await _safe_close(websocket, status.WS_1000_NORMAL_CLOSURE)
             raise WebSocketDisconnect(code=status.WS_1000_NORMAL_CLOSURE)
         except ValueError:
+            # Eskirgan socketning noto'g'ri JSON'iga javob JORIY socketga
+            # (manager player_id bo'yicha topadi) ketib qolmasligi kerak.
+            if await _reject_if_stale(
+                websocket=websocket,
+                room_id=room_id,
+                telegram_id=telegram_id,
+            ):
+                return
             # TUZATILDI (MEDIUM — noto'g'ri JSON butun ulanishni yiqitardi):
             # avval JSON dekodlash xatosi shu funksiyaning ichida
             # tutilmasdi va websocket_handler'ning umumiy
@@ -297,6 +330,17 @@ async def message_loop(
                 },
             )
             continue
+
+        # ---------------------------------------------------------
+        # 1.5 Eskirgan (stale) socket tekshiruvi — ping'dan ham OLDIN:
+        #     eskirgan socket pong ham, action ham ola olmaydi.
+        # ---------------------------------------------------------
+        if await _reject_if_stale(
+            websocket=websocket,
+            room_id=room_id,
+            telegram_id=telegram_id,
+        ):
+            return
 
         # ---------------------------------------------------------
         # 2. Xabar formatini tekshirish
@@ -373,13 +417,17 @@ async def message_loop(
         # ---------------------------------------------------------
         if game.winner is not None:
             finished = await finish_game(
-                db=db,
                 room_id=room_id,
                 game=game,
                 winner=game.winner,
             )
 
-            if finished:
+            # `game.finished` ham tekshiriladi: finish disconnect_watcher
+            # (qayta yakunlash) tomonidan allaqachon bajarilgan bo'lishi
+            # mumkin — u holda bu loop'ning davom etishi ma'nosiz.
+            # Agar finish muvaffaqiyatsiz bo'lsa (game.finished False),
+            # watcher uni keyingi siklda qayta uradi.
+            if finished or game.finished:
                 return
 
 

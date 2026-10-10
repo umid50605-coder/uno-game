@@ -1,6 +1,17 @@
 """
 backend/services/rating_service.py
 Stage 12.1 — Reyting xizmati.
+
+TRANSACTION QOIDASI (audit F-02/F-03): bu moduldagi funksiyalar HECH QACHON
+db.commit()/db.rollback() chaqirmaydi — ular faqat Session'dagi obyektlarni
+o'zgartiradi va db.flush() qiladi. Commit/rollback'ga CHAQIRUVCHI
+(orkestrator) qatlam egalik qiladi:
+
+  - o'yin natijasi (reyting + room + tournament match) -> api/routes/websocket/finish.py
+  - forfeit (o'yin davom etayotganda)                  -> api/routes/websocket/finish.py
+  - tournament g'olib mukofoti                         -> services/tournament/lifecycle.py
+
+Shunda "reyting commit bo'ldi, room commit bo'lmadi" kabi yarim-holat bo'lmaydi.
 """
 
 import logging
@@ -30,10 +41,11 @@ def apply_game_result(db: Session, player_ids: list[int], winner_id: int, via_fo
         else:
             user.rating = max(0, user.rating - RATING_LOSS)
 
-    db.commit()
+    # commit CHAQIRUVCHI tomonda (modul docstring'iga qarang).
+    db.flush()
 
     logger.info(
-        "Reyting yangilandi: g'olib=%s (forfeit=%s), ishtirokchilar=%s",
+        "Reyting yangilandi (commit kutilmoqda): g'olib=%s (forfeit=%s), ishtirokchilar=%s",
         winner_id, via_forfeit, player_ids,
     )
 
@@ -52,10 +64,11 @@ def apply_forfeit_result(db: Session, forfeiter_id: int, remaining_ids: list[int
         for user in remaining_users:
             user.rating += share
 
-    db.commit()
+    # commit CHAQIRUVCHI tomonda (modul docstring'iga qarang).
+    db.flush()
 
     logger.info(
-        "Forfeit ball: chiqqan=%s (games_played+1, rating-%d), qolganlar=%s (+%d/kishi)",
+        "Forfeit ball (commit kutilmoqda): chiqqan=%s (games_played+1, rating-%d), qolganlar=%s (+%d/kishi)",
         forfeiter_id,
         RATING_LOSS,
         remaining_ids,
@@ -73,10 +86,12 @@ def apply_tournament_reward(db: Session, winner_telegram_id: int, reward_points:
     yerda yana games_played+1 qilsak, "1 ta tournament g'alabasi" leaderboard
     tarixida yolg'on ravishda "N+1 ta o'yin" bo'lib ko'rinadi.
 
-    Chaqiruvchi tomon (tournament_service.finish_tournament) DOUBLE REWARD
-    bo'lmasligini ta'minlashi kerak — ya'ni bu funksiya faqat tournament
-    status FINISHED'ga o'tayotgan aynan bir martalik tranzaksiyada
-    chaqirilishi shart."""
+    Chaqiruvchi tomon (tournament/lifecycle.py::_finish_tournament_in_tx)
+    DOUBLE REWARD bo'lmasligini ta'minlashi kerak — ya'ni bu funksiya faqat
+    tournament status IN_PROGRESS -> FINISHED'ga o'tayotgan aynan bir
+    martalik tranzaksiyada chaqirilishi shart. Bu funksiya O'ZI commit
+    QILMAYDI: status o'zgarishi + reward bitta tranzaksiyada commit bo'ladi
+    (audit F-08)."""
     user = db.query(User).filter(User.telegram_id == winner_telegram_id).first()
     if user is None:
         logger.warning(
@@ -86,9 +101,9 @@ def apply_tournament_reward(db: Session, winner_telegram_id: int, reward_points:
         return
 
     user.rating += reward_points
-    db.commit()
+    db.flush()
 
     logger.info(
-        "Tournament reward berildi: winner=%s +%d ball",
+        "Tournament reward qo'llandi (commit kutilmoqda): winner=%s +%d ball",
         winner_telegram_id, reward_points,
     )

@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from api.deps import get_current_user_id
-from core.database import get_db
+from core.database import SessionLocal, get_db
 from models.schemas import (
     TournamentCreateOut,
     TournamentJoinRequest,
@@ -76,11 +76,21 @@ def leave_tournament(
     return tournament_service.leave_tournament(db, tournament_id, telegram_id)
 
 
+def _cancel_tournament_in_thread(tournament_id: int, telegram_id: int) -> dict:
+    """Worker thread ichida ishlaydi va O'ZINING SessionLocal()'ini ochadi
+    (audit F-01 bilan bir xil sinf: request-scoped Session boshqa threadga
+    uzatilmaydi — thread'ga faqat primitiv qiymatlar beriladi)."""
+    db = SessionLocal()
+    try:
+        return tournament_service.cancel_tournament(db, tournament_id, telegram_id)
+    finally:
+        db.close()
+
+
 @router.post("/{tournament_id}/cancel", response_model=TournamentOut)
 async def cancel_tournament(
     tournament_id: int,
     telegram_id: int = Depends(get_current_user_id),
-    db: Session = Depends(get_db),
 ):
     # TUZATILDI (CRITICAL — butun serverni muzlatib qo'yishi mumkin edi):
     # tournament_service.cancel_tournament ichida threading.Lock ishlatiladi
@@ -92,7 +102,7 @@ async def cancel_tournament(
     # edi. asyncio.to_thread orqali alohida threadga chiqaramiz — xuddi
     # FastAPI sync route'larni threadpool'da ishga tushirgani kabi.
     result = await asyncio.to_thread(
-        tournament_service.cancel_tournament, db, tournament_id, telegram_id
+        _cancel_tournament_in_thread, tournament_id, telegram_id
     )
 
     try:
