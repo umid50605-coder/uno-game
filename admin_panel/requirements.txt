@@ -4,5 +4,10 @@ jinja2>=3.1
 python-dotenv>=1.0
 itsdangerous>=2.1
 python-multipart>=0.0.9
+# DIQQAT: bu versiya backend/requirements.txt'dagi bilan BIR XIL bo'lishi shart.
+# Admin panel backend/core/database.py va backend modellarini to'g'ridan-to'g'ri
+# import qiladi. Avval bu yerda `sqlalchemy>=2.0` edi — u hozir 2.1.x ga yechiladi,
+# 2.1'da `postgresql://` URL'ning standart drayveri psycopg2 EMAS, psycopg (v3) bo'lib
+# qolgan, natijada `ModuleNotFoundError: No module named 'psycopg'` chiqadi.
 SQLAlchemy==2.0.51
 psycopg2-binary
