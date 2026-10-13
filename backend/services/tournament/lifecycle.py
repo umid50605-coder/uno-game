@@ -31,7 +31,7 @@ from services.tournament.validators import (
 logger = logging.getLogger(__name__)
 
 REGISTRATION_SECONDS = 60
-MIN_TOURNAMENT_PLAYERS = 2
+MIN_TOURNAMENT_PLAYERS = 5
 IDEAL_MATCH_SIZE = 4
 REWARD_PER_PARTICIPANT = 5
 
@@ -437,7 +437,7 @@ def _finish_tournament_in_tx(db: Session, tournament: Tournament, winner_telegra
     if winner_player is None:
         raise HTTPException(status_code=400, detail="G'olib shu turnir ishtirokchisi emas")
 
-    reward_points = tournament.participant_count * REWARD_PER_PARTICIPANT
+    reward_points = tournament.participant_count * (REWARD_PER_PARTICIPANT - 1)  # g'olib o'zini hisobga olmaymiz
 
     tournament.status = TournamentStatus.FINISHED
     tournament.finished_at = _utc_now()
